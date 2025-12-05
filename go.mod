@@ -1,6 +1,6 @@
 module github.com/steipete/imsg
 
-go 1.24.0
+go 1.22.0
 
 require (
 	github.com/nyaruka/phonenumbers v1.6.7
