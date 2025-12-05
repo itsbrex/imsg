@@ -1,4 +1,4 @@
-# imsg
+# 💬 imsg — Send, read, stream iMessage & SMS
 
 A macOS Messages.app CLI to send, read, and stream iMessage/SMS (with attachment metadata). Read-only for receives; send uses AppleScript to drive Messages.app.
 
