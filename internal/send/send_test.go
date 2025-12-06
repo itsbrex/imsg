@@ -15,6 +15,13 @@ func TestAppleScriptIncludesMessages(t *testing.T) {
 	}
 }
 
+func TestAppleScriptCoercesAttachmentAlias(t *testing.T) {
+	s := appleScript()
+	if !strings.Contains(s, "POSIX file theFilePath as alias") {
+		t.Fatalf("script should coerce attachment to alias to satisfy Messages: %s", s)
+	}
+}
+
 func containsAll(s string, parts []string) bool {
 	for _, p := range parts {
 		if !strings.Contains(s, p) {

@@ -78,7 +78,8 @@ func appleScript() string {
             send theMessage to targetBuddy
         end if
         if useAttachment is "1" then
-            set theFile to POSIX file theFilePath
+            -- Messages expects an alias; the coercion prevents "Can't get POSIX file" errors.
+            set theFile to POSIX file theFilePath as alias
             send theFile to targetBuddy
         end if
     end tell
