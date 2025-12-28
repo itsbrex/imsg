@@ -101,28 +101,6 @@ struct CommandRouter {
     {
       return envVersion
     }
-    if let value = loadVersionFromExecutableBundle() {
-      return value
-    }
-    return "dev"
-  }
-
-  private static func loadVersionFromExecutableBundle() -> String? {
-    let executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-      .resolvingSymlinksInPath()
-    let bundleURL = executableURL.deletingLastPathComponent()
-      .appendingPathComponent("imsg_imsg.bundle")
-    let candidateURLs = [
-      bundleURL.appendingPathComponent("version.txt"),
-      bundleURL.appendingPathComponent("Contents/Resources/version.txt"),
-    ]
-    guard
-      let url = candidateURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
-      let value = try? String(contentsOf: url, encoding: .utf8)
-    else {
-      return nil
-    }
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
+    return IMsgVersion.current
   }
 }

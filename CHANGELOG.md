@@ -2,22 +2,6 @@
 
 ## Unreleased
 
-## 0.2.5 - 2025-12-28
-- fix: load version file directly from resource bundle directory
-
-## 0.2.4 - 2025-12-28
-- fix: avoid Bundle.module lookup so symlinked installs can resolve version bundle
-
-## 0.2.3 - 2025-12-28
-- fix: resolve version bundle when imsg is invoked via symlinked path
-
-## 0.2.2 - 2025-12-28
-- fix: include SwiftPM resource bundle in release + build outputs
-
-## 0.2.1 - 2025-12-28
-- fix: embed CLI version in resources for `--version` output
-- docs: release checklist now includes version file update
-
 ## 0.2.0 - 2025-12-28
 - feat: Swift 6 rewrite with reusable IMsgCore library target
 - feat: Commander-based CLI with SwiftPM build/test workflow
@@ -26,6 +10,7 @@
 - chore: SwiftLint + swift-format linting
 - change: JSON attachment keys now snake_case
 - deprecation note: `--interval` replaced by `--debounce` (no compatibility)
+- chore: version.env + generated version source for `--version`
 
 ## 0.1.1 - 2025-12-27
 - feat: `imsg chats --json`

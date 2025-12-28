@@ -29,9 +29,6 @@ let package = Package(
         dependencies: [
             "IMsgCore",
             .product(name: "Commander", package: "Commander"),
-        ],
-        resources: [
-            .process("Resources"),
         ]
     ),
         .testTarget(

@@ -8,7 +8,8 @@
 1. Update `CHANGELOG.md` and version
    - Move entries from `Unreleased` into a new `## X.Y.Z - YYYY-MM-DD` section.
    - Credit contributors (e.g. `thanks @user`).
-   - Update `package.json` and `Sources/imsg/Resources/version.txt` to `X.Y.Z`.
+   - Update `version.env` and `package.json` to `X.Y.Z`.
+   - Run `scripts/generate-version.sh`.
 2. Ensure CI is green on `main`
    - `pnpm lint`
    - `pnpm test`
