@@ -35,7 +35,7 @@ public struct MessageSendOptions: Sendable {
   }
 }
 
-  public struct MessageSender {
+public struct MessageSender {
   private let normalizer: PhoneNumberNormalizer
   private let runner: (String, [String]) throws -> Void
   private let attachmentsSubdirectoryProvider: () -> URL
@@ -90,9 +90,15 @@ public struct MessageSendOptions: Sendable {
 
     let subdirectory = attachmentsSubdirectoryProvider()
     try fileManager.createDirectory(at: subdirectory, withIntermediateDirectories: true)
-    let attachmentDir = subdirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let attachmentDir = subdirectory.appendingPathComponent(
+      UUID().uuidString,
+      isDirectory: true
+    )
     try fileManager.createDirectory(at: attachmentDir, withIntermediateDirectories: true)
-    let destination = attachmentDir.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
+    let destination = attachmentDir.appendingPathComponent(
+      sourceURL.lastPathComponent,
+      isDirectory: false
+    )
     try fileManager.copyItem(at: sourceURL, to: destination)
     return destination.path
   }
@@ -100,7 +106,10 @@ public struct MessageSendOptions: Sendable {
   private static func defaultAttachmentsSubdirectory() -> URL {
     let fileManager = FileManager.default
     let home = fileManager.homeDirectoryForCurrentUser
-    let messagesRoot = home.appendingPathComponent("Library/Messages/Attachments", isDirectory: true)
+    let messagesRoot = home.appendingPathComponent(
+      "Library/Messages/Attachments",
+      isDirectory: true
+    )
     return messagesRoot.appendingPathComponent("imsg", isDirectory: true)
   }
 

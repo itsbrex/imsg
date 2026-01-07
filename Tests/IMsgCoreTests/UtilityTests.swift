@@ -146,10 +146,13 @@ func messageSenderUsesChatIdentifier() throws {
   defer { try? fileManager.removeItem(at: tempDir) }
   let attachment = tempDir.appendingPathComponent("file.dat")
   try Data("hello".utf8).write(to: attachment)
+  let attachmentsSubdirectory = tempDir.appendingPathComponent("staged")
+  try fileManager.createDirectory(at: attachmentsSubdirectory, withIntermediateDirectories: true)
   var captured: [String] = []
-  let sender = MessageSender(runner: { _, args in
-    captured = args
-  })
+  let sender = MessageSender(
+    runner: { _, args in captured = args },
+    attachmentsSubdirectoryProvider: { attachmentsSubdirectory }
+  )
   try sender.send(
     MessageSendOptions(
       recipient: "",
@@ -169,7 +172,9 @@ func messageSenderUsesChatIdentifier() throws {
 @Test
 func messageSenderStagesAttachmentsBeforeSend() throws {
   let fileManager = FileManager.default
-  let attachmentsSubdirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  let attachmentsSubdirectory = fileManager.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString
+  )
   try fileManager.createDirectory(at: attachmentsSubdirectory, withIntermediateDirectories: true)
   defer { try? fileManager.removeItem(at: attachmentsSubdirectory) }
   let sourceDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -242,7 +247,9 @@ func messageSenderThrowsWhenAttachmentsSubdirectoryIsReadOnly() throws {
 @Test
 func messageSenderThrowsWhenAttachmentMissing() {
   let fileManager = FileManager.default
-  let attachmentsSubdirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  let attachmentsSubdirectory = fileManager.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString
+  )
   try? fileManager.createDirectory(at: attachmentsSubdirectory, withIntermediateDirectories: true)
   defer { try? fileManager.removeItem(at: attachmentsSubdirectory) }
   let missingFile = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
