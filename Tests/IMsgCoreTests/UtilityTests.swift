@@ -155,9 +155,31 @@ func messageSenderUsesChatIdentifier() throws {
       chatGUID: "ignored-guid"
     )
   )
-  #expect(captured[5] == "iMessage;+;chat123")
+  #expect(captured[5] == "ignored-guid")
   #expect(captured[6] == "1")
   #expect(captured[4] == "1")
+}
+
+@Test
+func messageSenderTreatsHandleIdentifierAsRecipient() throws {
+  var captured: [String] = []
+  let sender = MessageSender(runner: { _, args in
+    captured = args
+  })
+  try sender.send(
+    MessageSendOptions(
+      recipient: "",
+      text: "hi",
+      attachmentPath: "",
+      service: .auto,
+      region: "US",
+      chatIdentifier: "+16502530000",
+      chatGUID: ""
+    )
+  )
+  #expect(captured[0] == "+16502530000")
+  #expect(captured[5].isEmpty)
+  #expect(captured[6] == "0")
 }
 
 @Test

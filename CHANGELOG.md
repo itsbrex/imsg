@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased (0.3.1)
+## Unreleased (0.3.2)
+- fix: prefer chat guid for chat_id sends to avoid 1:1 AppleScript errors (thanks @mshuffett)
 - chore: replace pnpm scripts with make targets
 - build: add universal binary build helper
 - ci: switch to make-based lint/test/build

@@ -192,6 +192,7 @@ func sendCommandResolvesChatID() async throws {
     })
   #expect(captured?.chatIdentifier == "+123")
   #expect(captured?.chatGUID == "iMessage;+;chat123")
+  #expect(captured?.recipient.isEmpty == true)
 }
 
 @Test

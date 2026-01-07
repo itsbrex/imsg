@@ -171,6 +171,7 @@ func rpcSendResolvesChatID() async throws {
 
   #expect(captured?.chatIdentifier == "iMessage;+;chat123")
   #expect(captured?.chatGUID == "iMessage;+;chat123")
+  #expect(captured?.recipient.isEmpty == true)
   #expect(output.responses.first?["result"] as? [String: Any] != nil)
 }
 

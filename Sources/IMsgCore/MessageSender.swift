@@ -51,14 +51,12 @@ public struct MessageSender {
 
   public func send(_ options: MessageSendOptions) throws {
     var resolved = options
-    let chatTarget = resolved.chatIdentifier.isEmpty ? resolved.chatGUID : resolved.chatIdentifier
+    let chatTarget = resolveChatTarget(&resolved)
     let useChat = !chatTarget.isEmpty
     if useChat == false {
       if resolved.region.isEmpty { resolved.region = "US" }
       resolved.recipient = normalizer.normalize(resolved.recipient, region: resolved.region)
       if resolved.service == .auto { resolved.service = .imessage }
-    } else if chatTarget.isEmpty {
-      throw IMsgError.invalidChatTarget("Missing chat identifier or guid")
     }
 
     try sendViaAppleScript(resolved, chatTarget: chatTarget, useChat: useChat)
@@ -122,6 +120,36 @@ public struct MessageSender {
           end tell
       end run
       """
+  }
+
+  private func resolveChatTarget(_ options: inout MessageSendOptions) -> String {
+    let guid = options.chatGUID.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !guid.isEmpty {
+      return guid
+    }
+    let identifier = options.chatIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    if identifier.isEmpty {
+      return ""
+    }
+    if looksLikeHandle(identifier) {
+      if options.recipient.isEmpty {
+        options.recipient = identifier
+      }
+      return ""
+    }
+    return identifier
+  }
+
+  private func looksLikeHandle(_ value: String) -> Bool {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return false }
+    let lower = trimmed.lowercased()
+    if lower.hasPrefix("imessage:") || lower.hasPrefix("sms:") || lower.hasPrefix("auto:") {
+      return true
+    }
+    if trimmed.contains("@") { return true }
+    let allowed = CharacterSet(charactersIn: "+0123456789 ()-")
+    return trimmed.rangeOfCharacter(from: allowed.inverted) == nil
   }
 
   private static func runAppleScript(source: String, arguments: [String]) throws {
