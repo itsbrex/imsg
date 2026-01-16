@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 - Unreleased
 
 - fix: prefer handle sends when chat identifier is a direct handle
 
