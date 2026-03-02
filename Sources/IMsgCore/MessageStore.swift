@@ -20,6 +20,17 @@ public final class MessageStore: @unchecked Sendable {
   let hasDestinationCallerID: Bool
   let hasAudioMessageColumn: Bool
   let hasAttachmentUserInfo: Bool
+  let hasBalloonBundleIDColumn: Bool
+
+  private struct URLBalloonDedupeEntry: Sendable {
+    let rowID: Int64
+    let date: Date
+  }
+
+  private static let urlBalloonDedupeWindow: TimeInterval = 90
+  private static let urlBalloonDedupeRetention: TimeInterval = 10 * 60
+
+  private var urlBalloonDedupe: [String: URLBalloonDedupeEntry] = [:]
 
   public init(path: String = MessageStore.defaultPath) throws {
     let normalized = NSString(string: path).expandingTildeInPath
@@ -42,6 +53,7 @@ public final class MessageStore: @unchecked Sendable {
       self.hasDestinationCallerID = messageColumns.contains("destination_caller_id")
       self.hasAudioMessageColumn = messageColumns.contains("is_audio_message")
       self.hasAttachmentUserInfo = attachmentColumns.contains("user_info")
+      self.hasBalloonBundleIDColumn = messageColumns.contains("balloon_bundle_id")
     } catch {
       throw MessageStore.enhance(error: error, path: normalized)
     }
@@ -55,7 +67,8 @@ public final class MessageStore: @unchecked Sendable {
     hasThreadOriginatorGUIDColumn: Bool? = nil,
     hasDestinationCallerID: Bool? = nil,
     hasAudioMessageColumn: Bool? = nil,
-    hasAttachmentUserInfo: Bool? = nil
+    hasAttachmentUserInfo: Bool? = nil,
+    hasBalloonBundleIDColumn: Bool? = nil
   ) throws {
     self.path = path
     self.queue = DispatchQueue(label: "imsg.db.test", qos: .userInitiated)
@@ -93,6 +106,11 @@ public final class MessageStore: @unchecked Sendable {
       self.hasAttachmentUserInfo = hasAttachmentUserInfo
     } else {
       self.hasAttachmentUserInfo = attachmentColumns.contains("user_info")
+    }
+    if let hasBalloonBundleIDColumn {
+      self.hasBalloonBundleIDColumn = hasBalloonBundleIDColumn
+    } else {
+      self.hasBalloonBundleIDColumn = messageColumns.contains("balloon_bundle_id")
     }
   }
 
@@ -179,6 +197,38 @@ public final class MessageStore: @unchecked Sendable {
     return try queue.sync {
       try block(connection)
     }
+  }
+
+  func shouldSkipURLBalloonDuplicate(
+    chatID: Int64,
+    sender: String,
+    text: String,
+    isFromMe: Bool,
+    date: Date,
+    rowID: Int64
+  ) -> Bool {
+    guard !text.isEmpty else { return false }
+
+    pruneURLBalloonDedupe(referenceDate: date)
+
+    let key = "\(chatID)|\(isFromMe ? 1 : 0)|\(sender)|\(text)"
+    let current = URLBalloonDedupeEntry(rowID: rowID, date: date)
+    guard let previous = urlBalloonDedupe[key] else {
+      urlBalloonDedupe[key] = current
+      return false
+    }
+
+    urlBalloonDedupe[key] = current
+    if rowID <= previous.rowID {
+      return true
+    }
+    return date.timeIntervalSince(previous.date) <= MessageStore.urlBalloonDedupeWindow
+  }
+
+  private func pruneURLBalloonDedupe(referenceDate: Date) {
+    guard !urlBalloonDedupe.isEmpty else { return }
+    let cutoff = referenceDate.addingTimeInterval(-MessageStore.urlBalloonDedupeRetention)
+    urlBalloonDedupe = urlBalloonDedupe.filter { $0.value.date >= cutoff }
   }
 }
 

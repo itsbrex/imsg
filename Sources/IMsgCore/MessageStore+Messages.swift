@@ -165,6 +165,7 @@ extension MessageStore {
     let associatedTypeColumn = hasReactionColumns ? "m.associated_message_type" : "NULL"
     let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
     let audioMessageColumn = hasAudioMessageColumn ? "m.is_audio_message" : "0"
+    let balloonBundleIDColumn = hasBalloonBundleIDColumn ? "m.balloon_bundle_id" : "NULL"
     let threadOriginatorColumn =
       hasThreadOriginatorGUIDColumn ? "m.thread_originator_guid" : "NULL"
     // Only filter out reactions if includeReactions is false
@@ -186,7 +187,7 @@ extension MessageStore {
              (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS attachments,
              \(bodyColumn) AS body,
              \(threadOriginatorColumn) AS thread_originator_guid,
-             m.balloon_bundle_id
+             \(balloonBundleIDColumn) AS balloon_bundle_id
       FROM message m
       LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
       LEFT JOIN handle h ON m.handle_id = h.ROWID
@@ -222,25 +223,24 @@ extension MessageStore {
 
     return try withConnection { db in
       var messages: [Message] = []
-      // Track URL balloon messages to deduplicate link preview re-deliveries.
-      // iMessage can write multiple rows for the same URL when the link preview resolves,
-      // producing duplicate messages with balloon_bundle_id = 'com.apple.messages.URLBalloonProvider'.
-      var seenURLBalloons: Set<String> = []
+      let urlBalloonProvider = "com.apple.messages.URLBalloonProvider"
 
       for row in try db.prepare(sql, bindings) {
-        // Deduplicate URL balloon messages with the same sender + text
+        let decoded = try decodeMessageRow(row, columns: columns, fallbackChatID: chatID)
         let balloonBundleID = stringValue(row[balloonBundleIDIndex])
-        if balloonBundleID == "com.apple.messages.URLBalloonProvider" {
-          let sender = stringValue(row[columns.sender])
-          let text = stringValue(row[columns.text])
-          let dedupeKey = "\(sender)|\(text)"
-          if seenURLBalloons.contains(dedupeKey) {
-            continue
-          }
-          seenURLBalloons.insert(dedupeKey)
+        if balloonBundleID == urlBalloonProvider,
+          shouldSkipURLBalloonDuplicate(
+            chatID: decoded.chatID,
+            sender: decoded.sender,
+            text: decoded.text,
+            isFromMe: decoded.isFromMe,
+            date: decoded.date,
+            rowID: decoded.rowID
+          )
+        {
+          continue
         }
 
-        let decoded = try decodeMessageRow(row, columns: columns, fallbackChatID: chatID)
         let replyToGUID = replyToGUID(
           associatedGuid: decoded.associatedGUID,
           associatedType: decoded.associatedType

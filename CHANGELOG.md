@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fix: dedupe URL balloon preview duplicates in watch stream without cross-chat/schema regressions (#64, thanks @lesaai)
 - fix: remove non-functional `typing` command and related RPC methods
 - fix: remove unsupported standalone IMCore typing path and stale error branch
 - test: drop typing-specific unit/integration tests with command/RPC surface removal
