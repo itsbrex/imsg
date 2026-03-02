@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- fix: remove non-functional `typing` command and related RPC methods
+- fix: remove unsupported standalone IMCore typing path and stale error branch
+- test: drop typing-specific unit/integration tests with command/RPC surface removal
 
 ## 0.5.0 - 2026-02-16
 

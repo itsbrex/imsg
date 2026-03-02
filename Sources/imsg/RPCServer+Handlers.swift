@@ -129,49 +129,6 @@ extension RPCServer {
     respond(id: id, result: ["ok": true])
   }
 
-  func handleTyping(params: [String: Any], id: Any?, start: Bool) async throws {
-    let input = ChatTargetInput(
-      recipient: stringParam(params["to"]) ?? "",
-      chatID: int64Param(params["chat_id"]),
-      chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
-      chatGUID: stringParam(params["chat_guid"]) ?? ""
-    )
-    try ChatTargetResolver.validateRecipientRequirements(
-      input: input,
-      mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
-      missingRecipientError: RPCError.invalidParams("to is required for direct typing")
-    )
-
-    let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
-      input: input,
-      lookupChat: { chatID in try await cache.info(chatID: chatID) },
-      unknownChatError: { chatID in
-        RPCError.invalidParams("unknown chat_id \(chatID)")
-      }
-    )
-
-    let resolvedIdentifier: String
-    if let preferred = resolvedTarget.preferredIdentifier {
-      resolvedIdentifier = preferred
-    } else if input.hasChatTarget {
-      throw RPCError.invalidParams("missing chat identifier or guid")
-    } else {
-      let serviceRaw = stringParam(params["service"]) ?? "imessage"
-      resolvedIdentifier = try ChatTargetResolver.directTypingIdentifier(
-        recipient: input.recipient,
-        serviceRaw: serviceRaw,
-        invalidServiceError: { _ in RPCError.invalidParams("invalid service") }
-      )
-    }
-
-    if start {
-      try startTyping(resolvedIdentifier)
-    } else {
-      try stopTyping(resolvedIdentifier)
-    }
-    respond(id: id, result: ["ok": true])
-  }
-
   func handleSend(params: [String: Any], id: Any?) async throws {
     let text = stringParam(params["text"]) ?? ""
     let file = stringParam(params["file"]) ?? ""

@@ -15,20 +15,12 @@ final class RPCServer {
   let subscriptions = SubscriptionStore()
   let verbose: Bool
   let sendMessage: (MessageSendOptions) throws -> Void
-  let startTyping: (String) throws -> Void
-  let stopTyping: (String) throws -> Void
 
   init(
     store: MessageStore,
     verbose: Bool,
     output: RPCOutput = RPCWriter(),
-    sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) },
-    startTyping: @escaping (String) throws -> Void = {
-      try TypingIndicator.startTyping(chatIdentifier: $0)
-    },
-    stopTyping: @escaping (String) throws -> Void = {
-      try TypingIndicator.stopTyping(chatIdentifier: $0)
-    }
+    sendMessage: @escaping (MessageSendOptions) throws -> Void = { try MessageSender().send($0) }
   ) {
     self.store = store
     self.watcher = MessageWatcher(store: store)
@@ -36,8 +28,6 @@ final class RPCServer {
     self.verbose = verbose
     self.output = output
     self.sendMessage = sendMessage
-    self.startTyping = startTyping
-    self.stopTyping = stopTyping
   }
 
   func run() async throws {
@@ -98,10 +88,6 @@ final class RPCServer {
         try await handleWatchUnsubscribe(id: id, params: params)
       case "send":
         try await handleSend(params: params, id: id)
-      case "typing.start":
-        try await handleTyping(params: params, id: id, start: true)
-      case "typing.stop":
-        try await handleTyping(params: params, id: id, start: false)
       default:
         output.sendError(id: id, error: RPCError.methodNotFound(method))
       }
