@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yourusername/imsg/docs/schema/v1.json",
+  "title": "imsg JSON output — v1",
+  "description": "Versioned envelope + payloads emitted by imsg on stdout and over RPC. See docs/SCHEMA.md.",
+
+  "$defs": {
+    "iso8601": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 date-time in UTC with fractional seconds, e.g. 2026-04-21T12:34:56.789Z."
+    },
+
+    "AttachmentItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "filename",
+        "transfer_name",
+        "uti",
+        "mime_type",
+        "total_bytes",
+        "is_sticker",
+        "original_path",
+        "missing"
+      ],
+      "properties": {
+        "filename":      { "type": "string" },
+        "transfer_name": { "type": "string" },
+        "uti":           { "type": "string", "description": "Apple UTI, e.g. public.jpeg" },
+        "mime_type":     { "type": "string" },
+        "total_bytes":   { "type": "integer", "minimum": 0 },
+        "is_sticker":    { "type": "boolean" },
+        "original_path": { "type": "string", "description": "Tilde-expanded absolute path." },
+        "missing":       { "type": "boolean", "description": "True when the on-disk file cannot be resolved." }
+      }
+    },
+
+    "ReactionItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "emoji", "sender", "is_from_me", "created_at"],
+      "properties": {
+        "id":          { "type": "integer" },
+        "type":        { "type": "string", "description": "love|like|dislike|laugh|emphasize|question|emoji (extensible)." },
+        "emoji":       { "type": "string" },
+        "sender":      { "type": "string" },
+        "is_from_me":  { "type": "boolean" },
+        "created_at":  { "$ref": "#/$defs/iso8601" }
+      }
+    },
+
+    "ChatPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "name", "identifier", "service", "last_message_at"],
+      "properties": {
+        "id":              { "type": "integer", "description": "chat.ROWID — preferred routing handle." },
+        "name":            { "type": "string" },
+        "identifier":      { "type": "string", "description": "chat_identifier (handle or group id)." },
+        "guid":            { "type": "string", "description": "RPC only; stable chat GUID." },
+        "service":         { "type": "string", "description": "iMessage, SMS, etc." },
+        "last_message_at": { "$ref": "#/$defs/iso8601" },
+        "participants":    { "type": "array", "items": { "type": "string" }, "description": "RPC only." },
+        "is_group":        { "type": "boolean", "description": "RPC only." }
+      }
+    },
+
+    "MessagePayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "chat_id",
+        "guid",
+        "sender",
+        "is_from_me",
+        "text",
+        "created_at",
+        "attachments",
+        "reactions"
+      ],
+      "properties": {
+        "id":                     { "type": "integer", "description": "message.ROWID." },
+        "chat_id":                { "type": "integer", "description": "Always present; preferred routing handle." },
+        "guid":                   { "type": "string" },
+        "reply_to_guid":          { "type": "string" },
+        "thread_originator_guid": { "type": "string", "description": "Root of the reply thread (0.5.0+)." },
+        "destination_caller_id":  { "type": "string" },
+        "sender":                 { "type": "string" },
+        "is_from_me":             { "type": "boolean" },
+        "text":                   { "type": "string" },
+        "created_at":             { "$ref": "#/$defs/iso8601" },
+        "attachments":            { "type": "array", "items": { "$ref": "#/$defs/AttachmentItem" } },
+        "reactions":              { "type": "array", "items": { "$ref": "#/$defs/ReactionItem" } },
+
+        "chat_identifier":        { "type": "string", "description": "RPC only." },
+        "chat_guid":              { "type": "string", "description": "RPC only." },
+        "chat_name":              { "type": "string", "description": "RPC only." },
+        "participants":           { "type": "array", "items": { "type": "string" }, "description": "RPC only." },
+        "is_group":               { "type": "boolean", "description": "RPC only." },
+
+        "is_reaction":            { "type": "boolean", "description": "True when this message represents a tapback/emoji reaction event." },
+        "reaction_type":          { "type": "string", "description": "love|like|dislike|laugh|emphasize|question|emoji." },
+        "reaction_emoji":         { "type": "string" },
+        "is_reaction_add":        { "type": "boolean", "description": "False when a previously-added reaction is being removed." },
+        "reacted_to_guid":        { "type": "string", "description": "GUID of the message the reaction targets." }
+      },
+      "dependentRequired": {
+        "is_reaction":      ["reaction_type", "reaction_emoji", "is_reaction_add", "reacted_to_guid"],
+        "reaction_type":    ["is_reaction"],
+        "reaction_emoji":   ["is_reaction"],
+        "is_reaction_add":  ["is_reaction"],
+        "reacted_to_guid":  ["is_reaction"]
+      }
+    },
+
+    "ReactionPayload": {
+      "description": "Reaction events are MessagePayloads whose is_reaction=true. Alias for discriminator wiring.",
+      "allOf": [
+        { "$ref": "#/$defs/MessagePayload" },
+        {
+          "type": "object",
+          "required": ["is_reaction", "reaction_type", "reaction_emoji", "is_reaction_add", "reacted_to_guid"],
+          "properties": {
+            "is_reaction": { "const": true }
+          }
+        }
+      ]
+    },
+
+    "WatchEventPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["event", "at"],
+      "properties": {
+        "event":       { "type": "string", "enum": ["started", "resynced", "stopped"] },
+        "at":          { "$ref": "#/$defs/iso8601" },
+        "since_rowid": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "ErrorPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message"],
+      "properties": {
+        "code":    { "type": "string", "description": "Stable machine-readable code (permission_denied, not_found, ...)." },
+        "message": { "type": "string" },
+        "details": { "type": "object", "additionalProperties": true }
+      }
+    },
+
+    "IMsgEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "data"],
+      "properties": {
+        "schema": { "const": "v1" },
+        "kind":   { "type": "string", "enum": ["chat", "message", "reaction", "watch_event", "error"] },
+        "data":   { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if":   { "properties": { "kind": { "const": "chat" } } },
+          "then": { "properties": { "data": { "$ref": "#/$defs/ChatPayload" } } }
+        },
+        {
+          "if":   { "properties": { "kind": { "const": "message" } } },
+          "then": { "properties": { "data": { "$ref": "#/$defs/MessagePayload" } } }
+        },
+        {
+          "if":   { "properties": { "kind": { "const": "reaction" } } },
+          "then": { "properties": { "data": { "$ref": "#/$defs/ReactionPayload" } } }
+        },
+        {
+          "if":   { "properties": { "kind": { "const": "watch_event" } } },
+          "then": { "properties": { "data": { "$ref": "#/$defs/WatchEventPayload" } } }
+        },
+        {
+          "if":   { "properties": { "kind": { "const": "error" } } },
+          "then": { "properties": { "data": { "$ref": "#/$defs/ErrorPayload" } } }
+        }
+      ]
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/$defs/IMsgEnvelope" }
+  ]
+}
