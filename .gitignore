@@ -42,3 +42,7 @@ bin/
 
 # Node.js / pnpm
 pnpm-lock.yaml
+
+# Claude Code agent worktrees (created by isolation: "worktree")
+.claude/worktrees/
+
