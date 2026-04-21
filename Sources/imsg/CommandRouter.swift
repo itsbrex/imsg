@@ -16,6 +16,15 @@ struct CommandRouter {
       SendCommand.spec,
       ReactCommand.spec,
       RpcCommand.spec,
+      McpCommand.spec,
+      ServeCommand.spec,
+      SearchCommand.spec,
+      RulesCommand.spec,
+      OutboxCommand.spec,
+      WhoCommand.spec,
+      GraphCommand.spec,
+      ComposeCommand.spec,
+      ExportCommand.spec,
     ]
     let descriptor = CommandDescriptor(
       name: rootName,
