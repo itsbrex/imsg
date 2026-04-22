@@ -1,4 +1,5 @@
 import Foundation
+import IMsgCore
 
 enum JSONLines {
   private static let encoder: JSONEncoder = {
@@ -17,5 +18,10 @@ enum JSONLines {
     if !line.isEmpty {
       StdoutWriter.writeLine(line)
     }
+  }
+
+  static func printEnvelope<T: Encodable>(kind: String, data: T) throws {
+    let envelope = EnvelopePayload(kind: kind, data: data)
+    try print(envelope)
   }
 }

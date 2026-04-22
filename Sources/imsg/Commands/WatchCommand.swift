@@ -95,7 +95,12 @@ enum WatchCommand {
           attachments: attachments,
           reactions: reactions
         )
-        try StdoutWriter.writeJSONLine(payload)
+        if IMsgSchema.envOverride == "v1" {
+          let kind = message.isReaction ? "reaction" : "message"
+          try JSONLines.printEnvelope(kind: kind, data: payload)
+        } else {
+          try StdoutWriter.writeJSONLine(payload)
+        }
         continue
       }
       let direction = message.isFromMe ? "sent" : "recv"

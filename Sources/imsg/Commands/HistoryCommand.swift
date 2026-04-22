@@ -57,7 +57,11 @@ enum HistoryCommand {
           attachments: attachments,
           reactions: reactions
         )
-        try StdoutWriter.writeJSONLine(payload)
+        if IMsgSchema.envOverride == "v1" {
+          try JSONLines.printEnvelope(kind: "message", data: payload)
+        } else {
+          try StdoutWriter.writeJSONLine(payload)
+        }
       }
       return
     }
