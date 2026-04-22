@@ -4,10 +4,12 @@ struct RuntimeOptions: Sendable {
   let jsonOutput: Bool
   let verbose: Bool
   let logLevel: String?
+  let allowSend: Bool
 
   init(parsedValues: ParsedValues) {
     self.jsonOutput = parsedValues.flags.contains("jsonOutput")
     self.verbose = parsedValues.flags.contains("verbose")
     self.logLevel = parsedValues.options["logLevel"]?.last
+    self.allowSend = parsedValues.flags.contains("allowSend")
   }
 }
