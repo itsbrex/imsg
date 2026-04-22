@@ -123,7 +123,8 @@ actor MCPServer {
         // `IMsgVersion.current` is declared at `Sources/imsg/Version.swift:3`.
         "version": .string(IMsgVersion.current),
       ]),
-      "schema": .string("v1"),
+      // Single-sourced from `Sources/IMsgCore/SchemaVersion.swift:4`.
+      "schema": .string(IMsgSchema.currentVersion),
     ])
     return MCPResponse(id: request.id, result: result)
   }

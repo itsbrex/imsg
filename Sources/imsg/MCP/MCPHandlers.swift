@@ -474,11 +474,11 @@ actor MCPHandlers {
   // MARK: - Helpers
 
   /// Wrap a tool's payload in the schema envelope `{schema, kind, data}`.
-  /// Uses the schema version constant documented in W2a (`"v1"`); until
-  /// `IMsgSchema.currentVersion` lands the string is inlined here.
+  /// Schema string pulled from `IMsgCore.IMsgSchema.currentVersion`
+  /// (`Sources/IMsgCore/SchemaVersion.swift:4`) so bumps stay single-sourced.
   private func envelope(kind: String, data: JSONValue) -> JSONValue {
     .object([
-      "schema": .string("v1"),
+      "schema": .string(IMsgSchema.currentVersion),
       "kind": .string(kind),
       "data": data,
     ])
