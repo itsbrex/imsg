@@ -26,7 +26,11 @@ enum ChatsCommand {
 
     if runtime.jsonOutput {
       for chat in chats {
-        try StdoutWriter.writeJSONLine(ChatPayload(chat: chat))
+        if IMsgSchema.envOverride == "v1" {
+          try JSONLines.printEnvelope(kind: "chat", data: ChatPayload(chat: chat))
+        } else {
+          try StdoutWriter.writeJSONLine(ChatPayload(chat: chat))
+        }
       }
       return
     }
