@@ -9,7 +9,7 @@ struct CommandRouter {
 
   init() {
     self.version = CommandRouter.resolveVersion()
-    self.specs = [
+    var base: [CommandSpec] = [
       ChatsCommand.spec,
       GroupCommand.spec,
       HistoryCommand.spec,
@@ -44,6 +44,23 @@ struct CommandRouter {
       WhoisCommand.spec,
       NicknameCommand.spec,
     ]
+    // top-10 improvements (PR #23) — Mac-only specs added separately so the
+    // Linux read-only build doesn't try to compile MCP / Outbox sources that
+    // depend on AppleScript or Apple-platform crypto.
+    #if os(macOS)
+      base.append(McpCommand.spec)
+      base.append(OutboxCommand.spec)
+    #endif
+    // Cross-platform stubs from the top-10 plan (no Mac-only deps yet).
+    base.append(contentsOf: [
+      ServeCommand.spec,
+      RulesCommand.spec,
+      WhoCommand.spec,
+      GraphCommand.spec,
+      ComposeCommand.spec,
+      ExportCommand.spec,
+    ])
+    self.specs = base
     let descriptor = CommandDescriptor(
       name: rootName,
       abstract: "Send and read iMessage / SMS from the terminal",

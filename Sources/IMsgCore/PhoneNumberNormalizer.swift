@@ -1,7 +1,9 @@
 import Foundation
 import PhoneNumberKit
 
-final class PhoneNumberNormalizer {
+final class PhoneNumberNormalizer: @unchecked Sendable {
+  // PhoneNumberUtility is not Sendable upstream, but parse/format are
+  // documented as thread-safe and we hold an immutable reference here.
   private let phoneNumberUtility = PhoneNumberUtility()
 
   func normalize(_ input: String, region: String) -> String {

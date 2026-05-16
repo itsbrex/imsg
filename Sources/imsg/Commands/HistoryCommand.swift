@@ -84,7 +84,15 @@ enum HistoryCommand {
           attachmentOptions: attachmentOptions,
           contactResolver: contacts
         )
-        try JSONLines.printObject(payload)
+        if IMsgSchema.envOverride == "v1" {
+          try JSONLines.printObject([
+            "schema": IMsgSchema.currentVersion,
+            "kind": "message",
+            "data": payload,
+          ])
+        } else {
+          try JSONLines.printObject(payload)
+        }
       }
       return
     }

@@ -134,7 +134,16 @@ enum WatchCommand {
           attachmentOptions: attachmentOptions,
           contactResolver: contacts
         )
-        try JSONLines.printObject(payload)
+        if IMsgSchema.envOverride == "v1" {
+          let kind = message.isReaction ? "reaction" : "message"
+          try JSONLines.printObject([
+            "schema": IMsgSchema.currentVersion,
+            "kind": kind,
+            "data": payload,
+          ])
+        } else {
+          try JSONLines.printObject(payload)
+        }
         continue
       }
       let direction = message.isFromMe ? "sent" : "recv"

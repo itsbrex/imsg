@@ -402,5 +402,6 @@ func sendCommandRejectsMisroutedChatGhost() async throws {
 private func jsonObject(from output: String) throws -> [String: Any] {
   let line = output.split(separator: "\n").first.map(String.init) ?? ""
   let data = Data(line.utf8)
-  return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  return (object["data"] as? [String: Any]) ?? object
 }

@@ -45,13 +45,17 @@ enum ChatsCommand {
           participants: participants,
           contacts: contacts
         )
-        try StdoutWriter.writeJSONLine(
-          ChatPayload(
-            chat: chat,
-            chatInfo: chatInfo,
-            participants: participants,
-            contactName: contactName
-          ))
+        let payload = ChatPayload(
+          chat: chat,
+          chatInfo: chatInfo,
+          participants: participants,
+          contactName: contactName
+        )
+        if IMsgSchema.envOverride == "v1" {
+          try JSONLines.printEnvelope(kind: "chat", data: payload)
+        } else {
+          try StdoutWriter.writeJSONLine(payload)
+        }
       }
       return
     }
