@@ -1,3 +1,4 @@
+#if os(macOS)
 import Commander
 import Foundation
 import IMsgCore
@@ -552,3 +553,5 @@ struct MCPToolError: Error, Sendable {
     MCPErrorObject(code: code, message: message, data: data)
   }
 }
+
+#endif

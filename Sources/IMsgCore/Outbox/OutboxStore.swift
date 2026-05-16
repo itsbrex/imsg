@@ -1,3 +1,4 @@
+#if os(macOS)
 import CryptoKit
 import Foundation
 import SQLite
@@ -631,3 +632,5 @@ public actor OutboxStore {
     )
   }
 }
+
+#endif

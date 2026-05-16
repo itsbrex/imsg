@@ -1,3 +1,4 @@
+#if os(macOS)
 import Commander
 import Foundation
 import IMsgCore
@@ -52,3 +53,5 @@ enum McpCommand {
     }
   }
 }
+
+#endif

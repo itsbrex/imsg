@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// Coarse classification of a ``MessageSender`` failure that the outbox
@@ -60,3 +61,5 @@ public enum SendErrorClassifier {
     return .transient
   }
 }
+
+#endif

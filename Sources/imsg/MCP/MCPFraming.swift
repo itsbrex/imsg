@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 // Minimal JSON value type used to pass through arbitrary JSON in JSON-RPC 2.0
@@ -230,3 +231,5 @@ enum MCPFraming {
     try encoder.encode(value)
   }
 }
+
+#endif

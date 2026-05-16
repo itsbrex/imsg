@@ -112,19 +112,21 @@ enum SendCommand {
       throw IMsgError.invalidChatTarget("Missing chat identifier or guid")
     }
 
-    if values.flag("viaOutbox") {
-      try await runViaOutbox(
-        values: values,
-        runtime: runtime,
-        input: input,
-        text: text,
-        file: file,
-        service: service,
-        region: region,
-        dbPath: dbPath
-      )
-      return
-    }
+    #if os(macOS)
+      if values.flag("viaOutbox") {
+        try await runViaOutbox(
+          values: values,
+          runtime: runtime,
+          input: input,
+          text: text,
+          file: file,
+          service: service,
+          region: region,
+          dbPath: dbPath
+        )
+        return
+      }
+    #endif
 
     let options = MessageSendOptions(
       recipient: input.recipient,
@@ -161,6 +163,7 @@ enum SendCommand {
     }
   }
 
+  #if os(macOS)
   static func runViaOutbox(
     values: ParsedValues,
     runtime: RuntimeOptions,
@@ -220,4 +223,5 @@ enum SendCommand {
       throw IMsgError.appleScriptFailure("outbox \(final.state): \(detail)")
     }
   }
+  #endif
 }

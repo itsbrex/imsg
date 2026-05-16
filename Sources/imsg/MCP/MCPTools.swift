@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// Catalog entry for one MCP tool. The `inputSchema` is a JSON Schema object
@@ -193,3 +194,5 @@ extension MCPTool {
     ])
   }
 }
+
+#endif

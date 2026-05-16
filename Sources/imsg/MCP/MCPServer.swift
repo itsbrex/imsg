@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import IMsgCore
 
@@ -203,3 +204,5 @@ actor MCPServer {
     }
   }
 }
+
+#endif

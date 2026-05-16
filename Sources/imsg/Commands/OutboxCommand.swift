@@ -1,3 +1,4 @@
+#if os(macOS)
 import Commander
 import Foundation
 import IMsgCore
@@ -278,3 +279,5 @@ struct OutboxShowPayload: Codable {
   let row: OutboxRow
   let events: [OutboxEvent]
 }
+
+#endif

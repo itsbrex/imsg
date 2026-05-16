@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// Retry budget for ``OutboxWorker``. Mirrors the table in `docs/outbox.md`
@@ -260,3 +261,5 @@ public actor OutboxWorker {
       + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000.0
   }
 }
+
+#endif
