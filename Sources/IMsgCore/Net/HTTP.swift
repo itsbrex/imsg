@@ -36,12 +36,41 @@ public struct URLSessionTransport: HTTPTransport, @unchecked Sendable {
   }
 
   public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    let (data, response) = try await session.data(for: request)
-    guard let http = response as? HTTPURLResponse else {
-      throw HTTPError.missingResponse
-    }
-    return (data, http)
+    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+      let (data, response) = try await session.data(for: request)
+      guard let http = response as? HTTPURLResponse else {
+        throw HTTPError.missingResponse
+      }
+      return (data, http)
+    #else
+      // The Linux build of this module exists only so the `imsg` CLI
+      // compiles — the network-using code paths (rules webhook, unfurl
+      // enrichment, compose) are gated by feature wiring that the
+      // Linux test target does not exercise. Avoid relying on
+      // `URLSession.data(for:)`'s async surface here, which has
+      // varied across swift-corelibs-foundation releases.
+      return try await sendViaDelegate(request)
+    #endif
   }
+
+  #if !(os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
+    private func sendViaDelegate(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+      try await withCheckedThrowingContinuation { continuation in
+        let task = session.dataTask(with: request) { data, response, error in
+          if let error {
+            continuation.resume(throwing: error)
+            return
+          }
+          guard let http = response as? HTTPURLResponse else {
+            continuation.resume(throwing: HTTPError.missingResponse)
+            return
+          }
+          continuation.resume(returning: (data ?? Data(), http))
+        }
+        task.resume()
+      }
+    }
+  #endif
 }
 
 public struct RetryPolicy: Sendable, Equatable {

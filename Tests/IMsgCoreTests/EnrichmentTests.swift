@@ -97,9 +97,9 @@ func unfurlExtractorPicksOnlyHTTPSURLs() {
 // MARK: - Unfurl over a fake HTTP transport
 
 private final class FakeUnfurlTransport: HTTPTransport, @unchecked Sendable {
-  enum Step: Sendable {
+  enum Step {
     case ok(Data)
-    case fail(Error)
+    case fail(any Error)
   }
   private let lock = NSLock()
   private var responses: [URL: Step] = [:]

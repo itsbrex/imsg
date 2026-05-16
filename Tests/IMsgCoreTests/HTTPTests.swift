@@ -6,9 +6,9 @@ import Testing
 // MARK: - Mock transport
 
 private final class MockTransport: HTTPTransport, @unchecked Sendable {
-  enum Step: Sendable {
+  enum Step {
     case response(status: Int, body: Data, headers: [String: String])
-    case failure(Error)
+    case failure(any Error)
   }
 
   private let lock = NSLock()
