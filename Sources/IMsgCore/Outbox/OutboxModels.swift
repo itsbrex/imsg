@@ -62,9 +62,17 @@ public struct OutboxItem: Sendable, Equatable {
     case .chat(let id): hasher.update(data: Data(String(id).utf8))
     }
     hasher.update(data: Data(nul))
-    if let text { hasher.update(data: Data(text.utf8)) } else { hasher.update(data: Data(nul)) }
+    if let text {
+      hasher.update(data: Data(text.utf8))
+    } else {
+      hasher.update(data: Data(nul))
+    }
     hasher.update(data: Data(nul))
-    if let filePath { hasher.update(data: Data(filePath.utf8)) } else { hasher.update(data: Data(nul)) }
+    if let filePath {
+      hasher.update(data: Data(filePath.utf8))
+    } else {
+      hasher.update(data: Data(nul))
+    }
     hasher.update(data: Data(nul))
     hasher.update(data: Data(service.utf8))
     let digest = hasher.finalize()

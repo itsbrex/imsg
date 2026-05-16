@@ -144,7 +144,8 @@ enum MCPToolCatalog {
   static let react = MCPTool(
     name: "imsg.react",
     description:
-      "Send a tapback reaction to the most recent incoming message. Requires imsg mcp --allow-send.",
+      "Send a tapback reaction to the most recent incoming message. "
+      + "Requires imsg mcp --allow-send.",
     inputSchema: schemaObject([
       "type": .string("object"),
       "properties": .object([

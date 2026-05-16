@@ -358,9 +358,9 @@ func phoneNumberNormalizerReturnsInputOnFailure() {
 
 @Test
 func messageSenderBuildsArguments() throws {
-  var captured: [String] = []
+  let capture = RunnerCapture()
   let sender = MessageSender(runner: { _, args in
-    captured = args
+    capture.set(args)
   })
   try sender.send(
     MessageSendOptions(
@@ -371,11 +371,29 @@ func messageSenderBuildsArguments() throws {
       region: "US"
     )
   )
+  let captured = capture.args
   #expect(captured.count == 7)
   #expect(captured[0] == "+16502530000")
   #expect(captured[2] == "imessage")
   #expect(captured[5].isEmpty)
   #expect(captured[6] == "0")
+}
+
+/// Captures runner args from a `@Sendable` closure used by `MessageSender`.
+/// `@unchecked Sendable` because tests run serially and the closure is the
+/// only writer, but Swift cannot prove that across the type system.
+final class RunnerCapture: @unchecked Sendable {
+  private var stored: [String] = []
+  var args: [String] { stored }
+  func set(_ args: [String]) { stored = args }
+}
+
+/// Boolean flag that a `@Sendable` runner closure can flip without capturing
+/// a `var` from the surrounding scope.
+final class CallFlag: @unchecked Sendable {
+  private var fired = false
+  var wasCalled: Bool { fired }
+  func mark() { fired = true }
 }
 
 @Test
@@ -389,9 +407,9 @@ func messageSenderUsesChatIdentifier() throws {
   let attachmentsSubdirectory = tempDir.appendingPathComponent("staged")
   try fileManager.createDirectory(at: attachmentsSubdirectory, withIntermediateDirectories: true)
 
-  var captured: [String] = []
+  let capture = RunnerCapture()
   let sender = MessageSender(
-    runner: { _, args in captured = args },
+    runner: { _, args in capture.set(args) },
     attachmentsSubdirectoryProvider: { attachmentsSubdirectory }
   )
   try sender.send(
@@ -405,6 +423,7 @@ func messageSenderUsesChatIdentifier() throws {
       chatGUID: "ignored-guid"
     )
   )
+  let captured = capture.args
   #expect(captured[5] == "ignored-guid")
   #expect(captured[6] == "1")
   #expect(captured[4] == "1")
@@ -425,9 +444,9 @@ func messageSenderStagesAttachmentsBeforeSend() throws {
   let payload = Data("hi".utf8)
   try payload.write(to: sourceFile)
 
-  var captured: [String] = []
+  let capture = RunnerCapture()
   let sender = MessageSender(
-    runner: { _, args in captured = args },
+    runner: { _, args in capture.set(args) },
     attachmentsSubdirectoryProvider: { attachmentsSubdirectory }
   )
 
@@ -441,7 +460,7 @@ func messageSenderStagesAttachmentsBeforeSend() throws {
     )
   )
 
-  let stagedPath = captured[3]
+  let stagedPath = capture.args[3]
   #expect(stagedPath != sourceFile.path)
   #expect(stagedPath.hasPrefix(attachmentsSubdirectory.path))
   #expect(fileManager.fileExists(atPath: stagedPath))
@@ -494,9 +513,9 @@ func messageSenderThrowsWhenAttachmentMissing() {
   try? fileManager.createDirectory(at: attachmentsSubdirectory, withIntermediateDirectories: true)
   defer { try? fileManager.removeItem(at: attachmentsSubdirectory) }
   let missingFile = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
-  var runnerCalled = false
+  let runnerFlag = CallFlag()
   let sender = MessageSender(
-    runner: { _, _ in runnerCalled = true },
+    runner: { _, _ in runnerFlag.mark() },
     attachmentsSubdirectoryProvider: { attachmentsSubdirectory }
   )
 
@@ -517,14 +536,14 @@ func messageSenderThrowsWhenAttachmentMissing() {
     #expect(Bool(false))
   }
 
-  #expect(runnerCalled == false)
+  #expect(runnerFlag.wasCalled == false)
 }
 
 @Test
 func messageSenderTreatsHandleIdentifierAsRecipient() throws {
-  var captured: [String] = []
+  let capture = RunnerCapture()
   let sender = MessageSender(runner: { _, args in
-    captured = args
+    capture.set(args)
   })
   try sender.send(
     MessageSendOptions(
@@ -537,6 +556,7 @@ func messageSenderTreatsHandleIdentifierAsRecipient() throws {
       chatGUID: ""
     )
   )
+  let captured = capture.args
   #expect(captured[0] == "+16502530000")
   #expect(captured[5].isEmpty)
   #expect(captured[6] == "0")

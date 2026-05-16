@@ -38,10 +38,10 @@ public struct MessageSendOptions: Sendable {
   }
 }
 
-public struct MessageSender {
+public struct MessageSender: Sendable {
   private let normalizer: PhoneNumberNormalizer
-  private let runner: (String, [String]) throws -> Void
-  private let attachmentsSubdirectoryProvider: () -> URL
+  private let runner: @Sendable (String, [String]) throws -> Void
+  private let attachmentsSubdirectoryProvider: @Sendable () -> URL
 
   public init() {
     self.normalizer = PhoneNumberNormalizer()
@@ -49,15 +49,15 @@ public struct MessageSender {
     self.attachmentsSubdirectoryProvider = MessageSender.defaultAttachmentsSubdirectory
   }
 
-  init(runner: @escaping (String, [String]) throws -> Void) {
+  init(runner: @escaping @Sendable (String, [String]) throws -> Void) {
     self.normalizer = PhoneNumberNormalizer()
     self.runner = runner
     self.attachmentsSubdirectoryProvider = MessageSender.defaultAttachmentsSubdirectory
   }
 
   init(
-    runner: @escaping (String, [String]) throws -> Void,
-    attachmentsSubdirectoryProvider: @escaping () -> URL
+    runner: @escaping @Sendable (String, [String]) throws -> Void,
+    attachmentsSubdirectoryProvider: @escaping @Sendable () -> URL
   ) {
     self.normalizer = PhoneNumberNormalizer()
     self.runner = runner

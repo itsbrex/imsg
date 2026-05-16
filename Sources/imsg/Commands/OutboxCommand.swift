@@ -47,7 +47,8 @@ enum OutboxCommand {
             label: "timeout", names: [.long("timeout")], help: "drain timeout seconds"),
           .make(
             label: "store", names: [.long("store")],
-            help: "override outbox store path (defaults to ~/Library/Application Support/imsg/outbox.sqlite)"
+            help: "override outbox store path "
+              + "(defaults to ~/Library/Application Support/imsg/outbox.sqlite)"
           ),
         ]
       )
@@ -270,8 +271,8 @@ enum OutboxCommand {
     let target = row.toHandle ?? row.chatID.map { "chat:\($0)" } ?? "?"
     let body = row.text ?? row.filePath ?? ""
     let preview = body.isEmpty ? "" : String(body.prefix(40))
-    return
-      "[\(row.id)] state=\(row.state) attempts=\(row.attempts) to=\(target) text=\(preview.debugDescription)"
+    return "[\(row.id)] state=\(row.state) attempts=\(row.attempts) "
+      + "to=\(target) text=\(preview.debugDescription)"
   }
 }
 
