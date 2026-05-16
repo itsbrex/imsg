@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: W3.M + W3.T complete)
+## Status snapshot (last updated: W3.M + W3.T + W3.H complete)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -12,7 +12,7 @@
 | 2b   | `imsg mcp` stdio Model Context Protocol server | ✅ shipped | `1e677ac` |
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
-| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 🚧 W3.M + W3.T shipped; W3.H / W3.C pending — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
+| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 🚧 W3.M + W3.T + W3.H shipped; W3.C pending — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
 | 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
@@ -56,11 +56,12 @@ Unblocks: W4.R (rules).
 - Errors carry line + column. Duplicate top-level keys, duplicate table headers, unterminated strings, invalid escapes, and newlines inside single-line strings are rejected.
 - `Tests/IMsgCoreTests/TOMLTests.swift` covers scalars, escapes, triple-quoted strings, arrays, inline tables, `[[rule]]` arrays-of-tables, a realistic rules.toml fixture, and the negative cases above.
 
-### W3.H — URLSession HTTP helper
+### W3.H — URLSession HTTP helper ✅
 Unblocks: W4.C (compose), W4.R webhook action, W4.E unfurl.
-- New `Sources/IMsgCore/Net/HTTP.swift` — HTTPS-only by default, 10s timeout, 3 retries with jitter, size cap, header allow-list, optional HMAC-SHA256 body signing.
-- Pure stdlib (`URLSession`, `CryptoKit`). No new dependency.
-- Files: `Sources/IMsgCore/Net/HTTP.swift`, `Tests/IMsgCoreTests/HTTPTests.swift` (uses `URLProtocol` stub).
+- `Sources/IMsgCore/Net/HTTP.swift` is a small HTTPS-by-default client with a 10s default timeout, a `RetryPolicy` (3 attempts, exponential backoff with jitter, configurable), a response size cap (default 1 MiB), a denylist of transport-control headers (`Host`, `Content-Length`, `Connection`, etc.), and optional HMAC-SHA256 body signing that adds `X-Imsg-Signature: sha256=<hex>` + `X-Imsg-Timestamp` (matches the contract in `docs/rules.md`).
+- Pure stdlib: `URLSession` + `CryptoKit`, no new dependency. Transport is abstracted behind `HTTPTransport` (with a `URLSessionTransport` default) so tests can drive the helper without touching the network.
+- Retry on `408`, `429`, and `5xx`; immediate failure on other `4xx` (`HTTPError.nonRetryableStatus`); `HTTPError.retriesExhausted(lastStatus:)` when the policy runs out; transport throws are retried and surfaced as `.transport`.
+- `Tests/IMsgCoreTests/HTTPTests.swift` covers HTTPS-only enforcement (and the `allowInsecureScheme` override), success, 429 → retry → success, 5xx exhaustion, immediate 4xx failure, transport-error retries, response-size cap, HMAC header shape, transport-header stripping, and method/body forwarding. Backoff is short-circuited via an injected sleeper so the suite stays sub-second.
 
 ### W3.C — Contacts bridge protocol
 Unblocks: W4.W (who/graph).
