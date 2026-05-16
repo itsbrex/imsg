@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: W4.X complete; W4.W + W4.E queued)
+## Status snapshot (last updated: W4.X + W4.W complete; W4.E queued)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -13,7 +13,7 @@
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
 | 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
-| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 🚧 W4.X shipped; W4.W / W4.E pending | — |
+| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 🚧 W4.X + W4.W shipped; W4.E pending | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
@@ -101,13 +101,15 @@ Each agent owns a disjoint directory and a fillable command stub.
 - `Tests/IMsgCoreTests/BundleRoundtripTests.swift` covers layout, deterministic byte-for-byte equality across two runs, message ordering, verifier clean / hash mismatch / missing file / unexpected file, differ identical / added / removed / edited.
 - Deferred (per project "Out of scope" list): attachment-bytes copy + per-attachment sha256, `--redact-handles` + side-car redaction map, `--all`, `--since`/`--until`, `--shard-by`, `--tar-zst`, Ed25519 `--sign-with`, and `imsg import`. The MVP is "metadata-only mode" from `docs/export.md`; the bundle is reproducible and verifiable without ever copying attachment payloads.
 
-### W4.W — Contacts (`who`) and interaction graph (`graph`)
-- Depends on W3.C (`ContactsBridge`).
-- `Sources/IMsgCore/Graph/GraphBuilder.swift` — read `MessageStore` history, group by `(contact_id, chat_id)`, compute frequency/cadence/last-seen.
-- `Sources/IMsgCore/Graph/GraphExporter.swift` — JSON (envelope-wrapped) + DOT for Graphviz.
-- Fill `Sources/imsg/Commands/WhoCommand.swift` — resolve one handle or all participants of a chat.
-- Fill `Sources/imsg/Commands/GraphCommand.swift` — windowed export.
-- Tests: in-memory `ContactsBridge` mock + fixture chat.db.
+### W4.W — Contacts (`who`) and interaction graph (`graph`) ✅
+Depends on W3.C (`ContactsBridge`).
+- `Sources/IMsgCore/Graph/InteractionGraph.swift` — `GraphNode` / `GraphEdge` / `GraphWindow` / `InteractionGraph` value types.
+- `Sources/IMsgCore/Graph/GraphBuilder.swift` — takes a list of `Message` rows + a `chats: [Int64: ChatInfo]` map + an injected `ContactsBridge` and aggregates per-`(contact, chat)` edges with `count`, `inbound`, `outbound`, `lastAt`. Reactions are skipped; outbound (`is_from_me`) messages collapse under a synthetic `me` contact id. Edges are returned ordered by count desc (tiebreak contact asc, then chat asc) so the output is stable. Resolved contact display names become the `contact_id`; unresolved handles fall back to the raw handle. The fuller `sha256(...)` id-synthesis pipeline from `docs/contacts.md` is deferred — the simpler scheme is sufficient for the edge-aggregation use case and stays stable across runs because the inputs are stable.
+- `Sources/IMsgCore/Graph/GraphExporter.swift` — schema-envelope JSON (`{schema:"v1",kind:"graph",data:{...}}`, sorted keys at every depth) and Graphviz DOT (`digraph imsg`, ellipses for contacts + boxes for chats, edge labels carry the count).
+- `Sources/imsg/Commands/WhoCommand.swift` — `--handle <h>` resolves a single handle via the bridge, `--chat-id <n>` lists all chat participants (each handle resolved against the same bridge). Default text output emits `<name> <<handle>>`; `--json` emits an object with `source: "contacts" | "fallback"`. `bridgeFactory` and `storeFactory` are injectable for testing.
+- `Sources/imsg/Commands/GraphCommand.swift` — `--chat-id` restricts to a single chat (default: all chats up to 1000), `--since` accepts ISO-8601 or relative `NNd` / `NNw`, `--until` accepts ISO-8601, `--limit` caps messages scanned (default 50k), `--dot` selects Graphviz output (default JSON).
+- Deferred (out of scope for the MVP): `--top K`, `--metrics` (cadence + direction imbalance), `--redact`, `--refresh`, photo data, the full `sha256(contact)` id pipeline, group-handle special casing.
+- `Tests/IMsgCoreTests/GraphBuilderTests.swift` covers per-`(contact, chat)` aggregation with inbound/outbound + lastAt, reaction filtering, fallback when the bridge returns nil, count-desc ordering, JSON-envelope shape, and DOT rendering.
 
 ---
 
