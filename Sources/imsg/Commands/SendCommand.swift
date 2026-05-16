@@ -164,64 +164,64 @@ enum SendCommand {
   }
 
   #if os(macOS)
-  static func runViaOutbox(
-    values: ParsedValues,
-    runtime: RuntimeOptions,
-    input: ChatTargetInput,
-    text: String,
-    file: String,
-    service: MessageService,
-    region: String,
-    dbPath: String
-  ) async throws {
-    let recipient: OutboxRecipient
-    if let chatID = input.chatID {
-      recipient = .chat(chatID)
-    } else {
-      recipient = .handle(input.recipient)
-    }
-    let serviceString: String
-    switch service {
-    case .sms: serviceString = "SMS"
-    case .imessage, .auto: serviceString = "iMessage"
-    }
-    let item = OutboxItem(
-      recipient: recipient,
-      text: text.isEmpty ? nil : text,
-      filePath: file.isEmpty ? nil : file,
-      service: serviceString,
-      region: region,
-      idempotencyKey: values.option("idempotencyKey")
-    )
-
-    let store = try await OutboxStore.openDefault()
-    let messageStore = try MessageStore(path: dbPath)
-    let sender = OutboxMessageSender()
-    let worker = OutboxWorker(store: store, sender: sender, messageStore: messageStore)
-    let enqueued = try await worker.enqueue(item)
-    do {
-      try await worker.drain(timeout: .seconds(90))
-    } catch is OutboxWorker.DrainError {
-      // Timed out waiting — fall through; the row may still be sent/verified later.
-    }
-    let final = (try await store.get(id: enqueued.id)) ?? enqueued
-
-    if runtime.jsonOutput {
-      try JSONLines.printEnvelope(kind: "outbox", data: final)
-    } else {
-      StdoutWriter.writeLine(
-        "outbox id=\(final.id) state=\(final.state) attempts=\(final.attempts)"
+    static func runViaOutbox(
+      values: ParsedValues,
+      runtime: RuntimeOptions,
+      input: ChatTargetInput,
+      text: String,
+      file: String,
+      service: MessageService,
+      region: String,
+      dbPath: String
+    ) async throws {
+      let recipient: OutboxRecipient
+      if let chatID = input.chatID {
+        recipient = .chat(chatID)
+      } else {
+        recipient = .handle(input.recipient)
+      }
+      let serviceString: String
+      switch service {
+      case .sms: serviceString = "SMS"
+      case .imessage, .auto: serviceString = "iMessage"
+      }
+      let item = OutboxItem(
+        recipient: recipient,
+        text: text.isEmpty ? nil : text,
+        filePath: file.isEmpty ? nil : file,
+        service: serviceString,
+        region: region,
+        idempotencyKey: values.option("idempotencyKey")
       )
-    }
 
-    switch final.state {
-    case OutboxState.verified.rawValue, OutboxState.sent.rawValue:
-      return
-    default:
-      // Terminal failure path: surface the classified error so operators can act.
-      let detail = final.lastError ?? "outbox \(final.state)"
-      throw IMsgError.appleScriptFailure("outbox \(final.state): \(detail)")
+      let store = try await OutboxStore.openDefault()
+      let messageStore = try MessageStore(path: dbPath)
+      let sender = OutboxMessageSender()
+      let worker = OutboxWorker(store: store, sender: sender, messageStore: messageStore)
+      let enqueued = try await worker.enqueue(item)
+      do {
+        try await worker.drain(timeout: .seconds(90))
+      } catch is OutboxWorker.DrainError {
+        // Timed out waiting — fall through; the row may still be sent/verified later.
+      }
+      let final = (try await store.get(id: enqueued.id)) ?? enqueued
+
+      if runtime.jsonOutput {
+        try JSONLines.printEnvelope(kind: "outbox", data: final)
+      } else {
+        StdoutWriter.writeLine(
+          "outbox id=\(final.id) state=\(final.state) attempts=\(final.attempts)"
+        )
+      }
+
+      switch final.state {
+      case OutboxState.verified.rawValue, OutboxState.sent.rawValue:
+        return
+      default:
+        // Terminal failure path: surface the classified error so operators can act.
+        let detail = final.lastError ?? "outbox \(final.state)"
+        throw IMsgError.appleScriptFailure("outbox \(final.state): \(detail)")
+      }
     }
-  }
   #endif
 }

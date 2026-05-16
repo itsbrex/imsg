@@ -24,4 +24,11 @@ public struct EnvelopePayload<T: Encodable>: Encodable {
     case kind
     case data
   }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(schema, forKey: .schema)
+    try container.encode(kind, forKey: .kind)
+    try container.encode(data, forKey: .data)
+  }
 }

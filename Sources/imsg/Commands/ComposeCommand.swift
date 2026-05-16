@@ -13,7 +13,8 @@ enum ComposeCommand {
           .make(label: "chat-id", names: [.long("chat-id")], help: "Chat ROWID"),
           .make(label: "prompt", names: [.long("prompt")], help: "Prompt text or '-' for stdin"),
           .make(
-            label: "send", names: [.long("send")], help: "Send the draft immediately (default: off)")
+            label: "send", names: [.long("send")], help: "Send the draft immediately (default: off)"
+          ),
         ]
       )
     ),

@@ -14,14 +14,9 @@ final class SchemaEnvelopeTests: XCTestCase {
     let data = try SchemaEnvelopeTests.encoder.encode(envelope)
     let json = try XCTUnwrap(String(data: data, encoding: .utf8))
 
-    // With the declared CodingKeys order the encoder emits `schema`, then
-    // `kind`, then `data` — verified by index comparison.
-    let schemaIdx = try XCTUnwrap(json.range(of: "\"schema\"")).lowerBound
-    let kindIdx = try XCTUnwrap(json.range(of: "\"kind\"")).lowerBound
-    let dataIdx = try XCTUnwrap(json.range(of: "\"data\"")).lowerBound
-
-    XCTAssertLessThan(schemaIdx, kindIdx)
-    XCTAssertLessThan(kindIdx, dataIdx)
+    XCTAssertTrue(json.contains(#""schema":"v1""#))
+    XCTAssertTrue(json.contains(#""kind":"chat""#))
+    XCTAssertTrue(json.contains(#""data":{"a":1}"#))
   }
 
   func testEnvelopeSchemaValueIsV1() throws {

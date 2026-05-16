@@ -20,6 +20,10 @@ final class FakeSendInvoker: SendInvoker, @unchecked Sendable {
   }
 
   func sendReaction(chatID: Int64, reaction: String, store: MessageStore) async throws {
+    recordReaction(chatID: chatID, reaction: reaction)
+  }
+
+  private func recordReaction(chatID: Int64, reaction: String) {
     lock.lock()
     defer { lock.unlock() }
     reactionCallCount += 1

@@ -112,9 +112,6 @@ func outboxWorkerDeadLettersPermissionErrors() async throws {
 
 @Test
 func outboxCommandListEmitsEnvelopeWhenJsonRequested() async throws {
-  setenv("IMSG_SCHEMA", "v1", 1)
-  defer { unsetenv("IMSG_SCHEMA") }
-
   let storePath = makeTempStorePath()
   // Seed a row so `list` has something to render.
   let store = try await OutboxStore.open(at: URL(fileURLWithPath: storePath))

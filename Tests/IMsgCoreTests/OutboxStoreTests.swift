@@ -45,7 +45,8 @@ final class OutboxStoreTests: XCTestCase {
     XCTAssertEqual(sending?.attempts, 1)
 
     try await store.markSent(id: row.id)
-    XCTAssertEqual(try await store.get(id: row.id)?.state, OutboxState.sent.rawValue)
+    let sent = try await store.get(id: row.id)
+    XCTAssertEqual(sent?.state, OutboxState.sent.rawValue)
 
     try await store.markVerified(id: row.id, verifiedGUID: "ABC", verifiedRowid: 42)
     let verified = try await store.get(id: row.id)
