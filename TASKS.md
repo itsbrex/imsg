@@ -11,8 +11,9 @@
 | 2a   | Schema envelope `{schema, kind, data}` (opt-in via `IMSG_SCHEMA=v1`) | ✅ shipped | `5a03950` |
 | 2b   | `imsg mcp` stdio Model Context Protocol server | ✅ shipped | `1e677ac` |
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
-| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 📋 planned | — |
-| 4a   | Features: enrichment, search-FTS5, export, who/graph | 📋 planned | — |
+| —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
+| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 📋 planned — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
+| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
@@ -26,13 +27,13 @@ The 10 ideas, mapped to current status:
 | #  | Idea | Command | Design doc | Status |
 |----|------|---------|-----------|--------|
 | 1  | MCP server                                | `imsg mcp`          | `docs/mcp.md`        | ✅ shipped (W2b) |
-| 2  | Search                                    | `imsg search`       | `docs/search.md`     | stub — W4a (W4.S) |
+| 2  | Search                                    | `imsg search`       | `docs/search.md`     | **superseded by upstream `imsg search`** (bridge-backed). Our W4.S FTS5 + embedding plan is descoped; if we want local-only indexing without the bridge, file it as a follow-up. |
 | 3  | Rules engine                              | `imsg rules`        | `docs/rules.md`      | stub — W4b (W4.R) |
 | 4  | Outbox                                    | `imsg outbox`       | `docs/outbox.md`     | ✅ shipped (W2c) |
 | 5  | Enrichment (OCR / unfurl / transcripts)   | flag on watch/etc.  | `docs/enrichment.md` | not started — W4a (W4.E) |
 | 6  | Schema envelope                           | n/a (env var)       | `docs/SCHEMA.md`     | ✅ shipped (W2a) |
 | 7  | Long-lived socket server                  | `imsg serve`        | `docs/serve.md`      | stub — W4b (W4.V) |
-| 8  | Contacts + interaction graph              | `imsg who`/`graph`  | `docs/contacts.md`   | stubs — W4a (W4.W) |
+| 8  | Contacts + interaction graph              | `imsg who`/`graph`  | `docs/contacts.md`   | stubs — W4a (W4.W). Note: upstream now ships `imsg whois` (reachability check via bridge) and `Sources/IMsgCore/ContactResolver.swift` (display-name lookup). Our W4.W focus narrows to interaction-graph aggregation and `--dot` export; the basic resolver work upstream already covers. |
 | 9  | Compose (LLM-drafted replies)             | `imsg compose`      | `docs/compose.md`    | stub — W4b (W4.C) |
 | 10 | Portable chat bundles                     | `imsg export`       | `docs/export.md`     | stub — W4a (W4.X) |
 
