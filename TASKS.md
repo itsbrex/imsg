@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: W3.M + W3.T + W3.H complete)
+## Status snapshot (last updated: Wave 3 complete; Wave 4a queued)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -12,7 +12,7 @@
 | 2b   | `imsg mcp` stdio Model Context Protocol server | ✅ shipped | `1e677ac` |
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
-| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 🚧 W3.M + W3.T + W3.H shipped; W3.C pending — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
+| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
 | 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
@@ -63,11 +63,12 @@ Unblocks: W4.C (compose), W4.R webhook action, W4.E unfurl.
 - Retry on `408`, `429`, and `5xx`; immediate failure on other `4xx` (`HTTPError.nonRetryableStatus`); `HTTPError.retriesExhausted(lastStatus:)` when the policy runs out; transport throws are retried and surfaced as `.transport`.
 - `Tests/IMsgCoreTests/HTTPTests.swift` covers HTTPS-only enforcement (and the `allowInsecureScheme` override), success, 429 → retry → success, 5xx exhaustion, immediate 4xx failure, transport-error retries, response-size cap, HMAC header shape, transport-header stripping, and method/body forwarding. Backoff is short-circuited via an injected sleeper so the suite stays sub-second.
 
-### W3.C — Contacts bridge protocol
+### W3.C — Contacts bridge protocol ✅
 Unblocks: W4.W (who/graph).
-- New `Sources/IMsgCore/Contacts/ContactsBridge.swift` — `protocol ContactsBridge { func find(handle:) async throws -> ContactRecord? }` plus a `SystemContactsBridge` impl using `Contacts.framework`. Cache layer at `~/Library/Application Support/imsg/contacts.sqlite` with 24h TTL.
-- Edit `Sources/imsg/Resources/Info.plist` to add `NSContactsUsageDescription`.
-- Files: `Sources/IMsgCore/Contacts/{ContactsBridge,ContactsCache,ContactRecord}.swift`, `Sources/imsg/Resources/Info.plist` (edit), `Tests/IMsgCoreTests/ContactsBridgeTests.swift` (uses an in-memory mock bridge).
+- Shipped as a thin wrapper over the upstream `ContactResolving`: `Sources/IMsgCore/Contacts/Contact.swift` (record type — `name` + `handle`), `Sources/IMsgCore/Contacts/ContactsBridge.swift` (`protocol ContactsBridge { func find(handle:) async throws -> Contact? }` plus `ResolverContactsBridge`, `NoOpContactsBridge`, and `InMemoryContactsBridge` for tests), and `Sources/IMsgCore/Contacts/ContactsCache.swift` (actor-backed TTL cache, defaults to 24h, caches negative hits, supports per-handle and bulk invalidation, injectable clock).
+- `Sources/imsg/Resources/Info.plist` gains `NSContactsUsageDescription`.
+- The original plan called for a SQLite cache at `~/Library/Application Support/imsg/contacts.sqlite`. Deferred — upstream `ContactResolver` already loads the full address book up front, so per-handle lookups are cheap and a process-local cache is sufficient. Persistent cache is a follow-up if profiling shows we need it.
+- `Tests/IMsgCoreTests/ContactsBridgeTests.swift` covers `InMemoryContactsBridge`, `NoOpContactsBridge`, `ResolverContactsBridge` (against a fake `ContactResolving`), and `ContactsCache` (hit, miss caching, TTL expiry with an injected clock, manual invalidation).
 
 ---
 
