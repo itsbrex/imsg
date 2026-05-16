@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: W4.X + W4.W complete; W4.E queued)
+## Status snapshot (last updated: Wave 4a complete; Wave 4b queued)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -13,7 +13,7 @@
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
 | 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
-| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 🚧 W4.X + W4.W shipped; W4.E pending | — |
+| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | ✅ shipped (W4.X + W4.W + W4.E library; W4.E CLI wiring deferred) | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
@@ -76,13 +76,13 @@ Unblocks: W4.W (who/graph).
 
 Each agent owns a disjoint directory and a fillable command stub.
 
-### W4.E — Enrichment pipeline
-- `Sources/IMsgCore/Enrichment/Enricher.swift` — protocol + chain runner.
-- `Sources/IMsgCore/Enrichment/OCREnricher.swift` — `VNRecognizeTextRequest`, 3s timeout per attachment, cache at `~/Library/Caches/imsg/enrich/ocr/`.
-- `Sources/IMsgCore/Enrichment/UnfurlEnricher.swift` — uses `Sources/IMsgCore/Net/HTTP.swift` (W3.H); extracts `<title>` + OG/Twitter meta; cache at `enrich/unfurl/`; HTTPS-only.
-- `Sources/IMsgCore/Enrichment/TranscriptEnricher.swift` — reuses existing chat.db transcription column; no on-device re-transcription in v1.
-- Wiring: `--enrich ocr,unfurl,transcript` flag on `WatchCommand`, `HistoryCommand`, and `McpCommand`. Added fields appear only inside the envelope payload (additive).
-- Tests: per-enricher unit tests, `Tests/imsgTests/EnrichmentFlagTests.swift` for CLI parsing.
+### W4.E — Enrichment pipeline ✅ (library; CLI wiring deferred)
+- `Sources/IMsgCore/Enrichment/Enricher.swift` — `Enricher` protocol, `EnrichmentField` / `EnrichmentValue` / `EnrichmentContext` / `EnrichmentResult` value types, and `EnrichmentChain` (concurrent runner with `TaskGroup`, deterministic merge in registration order, failing enrichers logged via `onError` without breaking the chain).
+- `Sources/IMsgCore/Enrichment/UnfurlEnricher.swift` — extracts HTTPS URLs (via `NSDataDetector`, capped per message), fetches each via the W3.H `HTTP` helper (HTTPS-only, size-capped, single attempt), and emits a compact `unfurl: [{url, title, og_title, og_description, og_image}, …]` field. `HTMLMetaScraper` is a small regex-based helper for `<title>` + OpenGraph meta tags — fine for the unfurl path, intentionally not a full HTML parser.
+- `Sources/IMsgCore/Enrichment/TranscriptEnricher.swift` — reads the pre-existing transcription stored in `attachment.user_info` (via the new `MessageStore.audioTranscriptionPublic(for:)` shim around the existing internal helper). v1 does not re-transcribe on device.
+- `Sources/IMsgCore/Enrichment/OCREnricher.swift` — `OCREnricher` protocol with `VisionOCREnricher` (macOS-only, `VNRecognizeTextRequest`, per-attachment timeout via `withThrowingTaskGroup`, accurate recognition + language correction) and `NoOpOCREnricher` for non-Apple builds / tests.
+- `Tests/IMsgCoreTests/EnrichmentTests.swift` — chain (order, failing enricher), HTML scraper happy path + nil cases, HTTPS-only URL extraction, full `UnfurlEnricher` round-trip over a fake transport, `TranscriptEnricher` present / absent / empty.
+- Deferred follow-up: wiring `--enrich ocr,unfurl,transcript` into `WatchCommand`, `HistoryCommand`, and `McpCommand`. The library is in place; the CLI integration is a separate, focused change so the cross-cutting touch can land under its own review.
 
 ### W4.S — Search (FTS5 tier only)
 - `Sources/IMsgCore/Search/SearchIndex.swift` — protocol.

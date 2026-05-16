@@ -64,6 +64,10 @@ extension MessageStore {
     }
   }
 
+  public func audioTranscriptionPublic(for messageID: Int64) throws -> String? {
+    try audioTranscription(for: messageID)
+  }
+
   func audioTranscription(for messageID: Int64) throws -> String? {
     guard schema.hasAttachmentUserInfo else { return nil }
     let query = AudioTranscriptionQuery(messageID: MessageID(rawValue: messageID))
