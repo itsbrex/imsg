@@ -4,7 +4,11 @@ import Foundation
 import IMsgCore
 
 enum McpCommand {
-  static let spec = CommandSpec(
+  // Computed rather than `static let` so the closure capturing the MCPServer
+  // actor isn't eagerly initialized at type load. Swift 6.2 rejects the
+  // stored form as "actor-isolated default value in a nonisolated context".
+  static var spec: CommandSpec {
+    CommandSpec(
     name: "mcp",
     abstract: "Run a Model Context Protocol (MCP) stdio server",
     discussion: """
@@ -51,6 +55,7 @@ enum McpCommand {
       )
       throw error
     }
+  }
   }
 }
 
