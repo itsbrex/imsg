@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: end of Wave 2)
+## Status snapshot (last updated: W3.M complete)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -12,7 +12,7 @@
 | 2b   | `imsg mcp` stdio Model Context Protocol server | ✅ shipped | `1e677ac` |
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
-| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 📋 planned — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
+| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 🚧 W3.M shipped; W3.T / W3.H / W3.C pending — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
 | 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
@@ -43,12 +43,11 @@ The 10 ideas, mapped to current status:
 
 These unblock multiple Wave-4 features. **Land sequentially**, one review batch per task, so any concurrency/permissions issues are caught before parallel work starts.
 
-### W3.M — MessageWatcher multi-consumer fanout
+### W3.M — MessageWatcher multi-consumer fanout ✅
 Unblocks: W4.V (serve), W4.R (rules), W4.E (enrichment).
-- Convert `Sources/IMsgCore/MessageWatcher.swift` to an `actor` with a single shared `DispatchSource`, one cursor per `(chatID, sinceRowID)`, and N subscribed `AsyncThrowingStream` consumers.
-- Keep the existing `stream(chatID:sinceRowID:configuration:) -> AsyncThrowingStream<Message, Error>` as a thin convenience wrapper so `WatchCommand` and `RpcCommand` stay untouched.
-- Concurrency tests: two subscribers see the same row exactly once each; cancellation of one consumer doesn't affect the other.
-- Files: `Sources/IMsgCore/MessageWatcher.swift` (refactor), `Tests/IMsgCoreTests/MessageWatcherFanoutTests.swift` (new, Swift Testing).
+- `Sources/IMsgCore/MessageWatcher.swift` is now an `actor` with a private `FileObserver` wrapper around `DispatchSourceFileSystemObject`. The observer is created lazily on first subscribe and torn down when the last subscriber drops. Each subscriber owns its own cursor + chatID filter; one shared fallback poll runs at the minimum interval across subscribers.
+- The public `stream(chatID:sinceRowID:configuration:) -> AsyncThrowingStream<Message, Error>` API is preserved (now `nonisolated`); `WatchCommand`, `RPCServer+Handlers`, and `MCPHandlers` compile unchanged.
+- New: `Tests/IMsgCoreTests/MessageWatcherFanoutTests.swift` covers (a) two subscribers each see every row exactly once, (b) cancellation of one consumer leaves the other running, (c) per-subscriber chat filters are independent.
 
 ### W3.T — Hand-rolled TOML subset
 Unblocks: W4.R (rules).
