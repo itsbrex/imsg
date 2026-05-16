@@ -8,9 +8,10 @@ func chatPayload(
   name: String,
   service: String,
   lastMessageAt: Date,
-  participants: [String]
+  participants: [String],
+  contactName: String? = nil
 ) -> [String: Any] {
-  return [
+  var payload: [String: Any] = [
     "id": id,
     "identifier": identifier,
     "guid": guid,
@@ -20,6 +21,10 @@ func chatPayload(
     "participants": participants,
     "is_group": isGroupHandle(identifier: identifier, guid: guid),
   ]
+  if let contactName {
+    payload["contact_name"] = contactName
+  }
+  return payload
 }
 
 func messagePayload(
@@ -27,12 +32,20 @@ func messagePayload(
   chatInfo: ChatInfo?,
   participants: [String],
   attachments: [AttachmentMeta],
-  reactions: [Reaction]
+  reactions: [Reaction],
+  senderName: String? = nil,
+  reactionSenderNames: [Int64: String] = [:]
 ) throws -> [String: Any] {
   let identifier = chatInfo?.identifier ?? ""
   let guid = chatInfo?.guid ?? ""
   let name = chatInfo?.name ?? ""
-  let core = MessagePayload(message: message, attachments: attachments, reactions: reactions)
+  let core = MessagePayload(
+    message: message,
+    attachments: attachments,
+    reactions: reactions,
+    senderName: senderName,
+    reactionSenderNames: reactionSenderNames
+  )
   var payload = try core.asDictionary()
   payload["chat_identifier"] = identifier
   payload["chat_guid"] = guid
@@ -43,7 +56,7 @@ func messagePayload(
 }
 
 func attachmentPayload(_ meta: AttachmentMeta) -> [String: Any] {
-  return [
+  var payload: [String: Any] = [
     "filename": meta.filename,
     "transfer_name": meta.transferName,
     "uti": meta.uti,
@@ -53,10 +66,17 @@ func attachmentPayload(_ meta: AttachmentMeta) -> [String: Any] {
     "original_path": meta.originalPath,
     "missing": meta.missing,
   ]
+  if let convertedPath = meta.convertedPath {
+    payload["converted_path"] = convertedPath
+  }
+  if let convertedMimeType = meta.convertedMimeType {
+    payload["converted_mime_type"] = convertedMimeType
+  }
+  return payload
 }
 
-func reactionPayload(_ reaction: Reaction) -> [String: Any] {
-  return [
+func reactionPayload(_ reaction: Reaction, senderName: String? = nil) -> [String: Any] {
+  var payload: [String: Any] = [
     "id": reaction.rowID,
     "type": reaction.reactionType.name,
     "emoji": reaction.reactionType.emoji,
@@ -64,6 +84,10 @@ func reactionPayload(_ reaction: Reaction) -> [String: Any] {
     "is_from_me": reaction.isFromMe,
     "created_at": CLIISO8601.format(reaction.date),
   ]
+  if let senderName {
+    payload["sender_name"] = senderName
+  }
+  return payload
 }
 
 func isGroupHandle(identifier: String, guid: String) -> Bool {
@@ -114,4 +138,15 @@ func stringArrayParam(_ value: Any?) -> [String] {
       .filter { !$0.isEmpty }
   }
   return []
+}
+
+let defaultRPCWatchDebounceInterval: TimeInterval = 0.5
+
+func watchDebounceIntervalParam(_ params: [String: Any]) throws -> TimeInterval {
+  let raw = params["debounce_ms"] ?? params["debounceMs"]
+  guard let raw else { return defaultRPCWatchDebounceInterval }
+  guard let milliseconds = intParam(raw), milliseconds >= 0 else {
+    throw RPCError.invalidParams("debounce_ms must be a non-negative integer")
+  }
+  return Double(milliseconds) / 1000
 }

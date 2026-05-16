@@ -19,17 +19,42 @@ enum ChatsCommand {
       "imsg chats --limit 5 --json",
     ]
   ) { values, runtime in
+    try await run(values: values, runtime: runtime)
+  }
+
+  static func run(
+    values: ParsedValues,
+    runtime: RuntimeOptions,
+    contactResolverFactory: @escaping () async -> any ContactResolving = {
+      await ContactResolver.create()
+    }
+  ) async throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let limit = values.optionInt("limit") ?? 20
     let store = try MessageStore(path: dbPath)
     let chats = try store.listChats(limit: limit)
+    let contacts = await contactResolverFactory()
 
     if runtime.jsonOutput {
       for chat in chats {
+        let chatInfo = try store.chatInfo(chatID: chat.id)
+        let participants = try store.participants(chatID: chat.id)
+        let contactName = contactNameForChat(
+          chat: chat,
+          chatInfo: chatInfo,
+          participants: participants,
+          contacts: contacts
+        )
+        let payload = ChatPayload(
+          chat: chat,
+          chatInfo: chatInfo,
+          participants: participants,
+          contactName: contactName
+        )
         if IMsgSchema.envOverride == "v1" {
-          try JSONLines.printEnvelope(kind: "chat", data: ChatPayload(chat: chat))
+          try JSONLines.printEnvelope(kind: "chat", data: payload)
         } else {
-          try StdoutWriter.writeJSONLine(ChatPayload(chat: chat))
+          try StdoutWriter.writeJSONLine(payload)
         }
       }
       return
@@ -37,7 +62,33 @@ enum ChatsCommand {
 
     for chat in chats {
       let last = CLIISO8601.format(chat.lastMessageAt)
-      StdoutWriter.writeLine("[\(chat.id)] \(chat.name) (\(chat.identifier)) last=\(last)")
+      let participants = try store.participants(chatID: chat.id)
+      let contactName = contactNameForChat(
+        chat: chat,
+        chatInfo: nil,
+        participants: participants,
+        contacts: contacts
+      )
+      let displayName = contactName ?? chat.name
+      StdoutWriter.writeLine("[\(chat.id)] \(displayName) (\(chat.identifier)) last=\(last)")
     }
+  }
+
+  private static func contactNameForChat(
+    chat: Chat,
+    chatInfo: ChatInfo?,
+    participants: [String],
+    contacts: any ContactResolving
+  ) -> String? {
+    let identifier = chatInfo?.identifier ?? chat.identifier
+    let guid = chatInfo?.guid ?? ""
+    guard !isGroupHandle(identifier: identifier, guid: guid) else { return nil }
+    if let name = contacts.displayName(for: identifier) {
+      return name
+    }
+    if participants.count == 1 {
+      return contacts.displayName(for: participants[0])
+    }
+    return nil
   }
 }

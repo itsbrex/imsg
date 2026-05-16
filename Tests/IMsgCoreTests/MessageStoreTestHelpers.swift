@@ -11,73 +11,32 @@ enum TestDatabase {
 
   static func makeStore(
     includeAttributedBody: Bool = false,
-    includeReactionColumns: Bool = false
+    includeReactionColumns: Bool = false,
+    attachmentFilename: String = "~/Library/Messages/Attachments/test.dat",
+    attachmentTransferName: String = "test.dat",
+    attachmentUTI: String = "public.data",
+    attachmentMimeType: String = "application/octet-stream"
   ) throws -> MessageStore {
     let db = try Connection(.inMemory)
-    let attributedBodyColumn = includeAttributedBody ? "attributedBody BLOB," : ""
-
-    let reactionColumns: String
-    if includeReactionColumns {
-      reactionColumns = "guid TEXT, associated_message_guid TEXT, associated_message_type INTEGER,"
-    } else {
-      reactionColumns = ""
-    }
-
-    try db.execute(
-      """
-      CREATE TABLE message (
-        ROWID INTEGER PRIMARY KEY,
-        handle_id INTEGER,
-        text TEXT,
-        \(attributedBodyColumn)
-        \(reactionColumns)
-        date INTEGER,
-        is_from_me INTEGER,
-        service TEXT
-      );
-      """
-    )
-    try db.execute(
-      """
-      CREATE TABLE chat (
-        ROWID INTEGER PRIMARY KEY,
-        chat_identifier TEXT,
-        guid TEXT,
-        display_name TEXT,
-        service_name TEXT
-      );
-      """
-    )
-    try db.execute("CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);")
-    try db.execute("CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);")
-    try db.execute("CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);")
-    try db.execute(
-      """
-      CREATE TABLE attachment (
-        ROWID INTEGER PRIMARY KEY,
-        filename TEXT,
-        transfer_name TEXT,
-        uti TEXT,
-        mime_type TEXT,
-        total_bytes INTEGER,
-        is_sticker INTEGER
-      );
-      """
-    )
-    try db.execute(
-      """
-      CREATE TABLE message_attachment_join (
-        message_id INTEGER,
-        attachment_id INTEGER
-      );
-      """
+    try MessageDatabaseFixture.createSchema(
+      db,
+      options: MessageDatabaseFixture.SchemaOptions(
+        includeAttributedBody: includeAttributedBody,
+        includeReactionColumns: includeReactionColumns
+      )
     )
 
     let now = Date()
     try db.run(
       """
-      INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
-      VALUES (1, '+123', 'iMessage;+;chat123', 'Test Chat', 'iMessage')
+      INSERT INTO chat(
+        ROWID, chat_identifier, guid, display_name, service_name,
+        account_id, account_login, last_addressed_handle
+      )
+      VALUES (
+        1, '+123', 'iMessage;+;chat123', 'Test Chat', 'iMessage',
+        'iMessage;+;me@icloud.com', 'me@icloud.com', '+15551234567'
+      )
       """
     )
     try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, 'Me')")
@@ -114,8 +73,12 @@ enum TestDatabase {
             total_bytes,
             is_sticker
           )
-          VALUES (1, '~/Library/Messages/Attachments/test.dat', 'test.dat', 'public.data', 'application/octet-stream', 123, 0)
-          """
+          VALUES (1, ?, ?, ?, ?, 123, 0)
+          """,
+          attachmentFilename,
+          attachmentTransferName,
+          attachmentUTI,
+          attachmentMimeType
         )
         try db.run(
           """

@@ -1,10 +1,159 @@
 # Changelog
 
-## Unreleased
-- fix: dedupe URL balloon preview duplicates in watch stream without cross-chat/schema regressions (#64, thanks @lesaai)
-- fix: remove non-functional `typing` command and related RPC methods
-- fix: remove unsupported standalone IMCore typing path and stale error branch
-- test: drop typing-specific unit/integration tests with command/RPC surface removal
+## 0.9.1 - Unreleased
+
+## 0.9.0 - 2026-05-16
+
+### JSON Output
+- feat: include `reply_to_text` and `reply_to_sender` on message payloads
+  emitted by `history`, `search`, `watch`, and `rpc` so consumers can quote
+  the parent of a threaded reply (or non-reaction association) without a
+  follow-up chat.db lookup. The parent is resolved by joining
+  `thread_originator_guid` or the non-reaction `associated_message_guid`
+  back to the message table; absent parents leave the fields nil (#115, thanks
+  @omarshahine).
+
+### JSON-RPC
+- feat: expose bridge-backed message RPC methods for rich sends, attachments, tapbacks, edits, unsends, deletes, and notify-anyways; include the CLI version in `imsg status --json` so callers can gate newer RPC action surfaces.
+
+### Private API Bridge
+- fix: support threaded attachment replies via `send-rich --file` and
+  `send-attachment --reply-to`, including the macOS 26 attachment staging
+  fallback (#113, #114, thanks @omarshahine).
+- fix: `edit` now applies on macOS 14+ instead of silently no-opping by passing
+  the backing `IMMessageItem` and attributed compatibility text to IMCore (#116,
+  thanks @zshawauxlol).
+
+### Attachments
+- fix: avoid hanging attachment metadata conversion when `ffmpeg` emits enough output to fill stdout or stderr pipes.
+
+## 0.8.2 - 2026-05-11
+
+### JSON-RPC
+- fix: keep `imsg rpc` stdout strictly JSONL when startup fails before the
+  database opens; Full Disk Access failures now answer the caller's request
+  with a JSON-RPC error instead of printing the human permission banner to
+  stdout.
+
+## 0.8.1 - 2026-05-09
+
+### Release Packaging
+- fix: include the IMCore bridge helper dylib in macOS release archives and
+  search Homebrew install paths for brew-installed advanced features (#111,
+  thanks @omarshahine).
+
+### Messaging
+- fix: route JSON-RPC `send` through the IMCore bridge when it is available,
+  with automatic AppleScript fallback and an explicit `transport` override
+  (#108).
+- fix: resolve JSON-RPC `typing` direct recipients against existing chat GUIDs
+  before synthesizing an `iMessage`/`SMS` prefix (#109).
+- fix: stage bridge attachments before dylib sends and let
+  `send-attachment --transport auto` fall back to AppleScript for normal files
+  when the bridge is unavailable (#110, thanks @omarshahine).
+
+## 0.8.0 - 2026-05-08
+
+### Linux Read-Only Preview
+- feat: add a Linux read-only core build with fixture-backed tests and GitHub
+  CI coverage for copied Messages databases.
+- build: add Linux release archive packaging for `imsg-linux-x86_64.tar.gz`.
+- docs: document Linux as read-only support for existing copied Messages
+  databases.
+
+### Message Decoding
+- fix: strip printable typedstream length bytes from recovered `attributedBody`
+  text for 32-126 byte messages (#107, thanks @SagarSDagdu).
+
+## 0.7.3 - 2026-05-06
+
+### Private API Bridge
+- fix: restore macOS 26 bridge sends, replies, tapbacks, typing/read RPC, and
+  chat/group lifecycle RPC methods after the BlueBubbles-inspired bridge port
+  regressed on Tahoe (#101, thanks @omarshahine).
+- fix: stage bridge attachments with the target chat GUID and fall back to the
+  modern IMDPersistence save API when the legacy persistent-path API returns
+  nil (#102, #103, thanks @omarshahine).
+
+### Security
+- fix: harden bridge IPC queue directories and attachment paths against
+  symlink traversal while preserving trusted macOS system aliases like `/tmp`
+  (#105, thanks @omarshahine).
+
+## 0.7.2 - 2026-05-06
+
+### Release Packaging
+- fix: publish a fresh signed and notarized macOS patch archive with matching
+  Homebrew metadata.
+
+## 0.7.1 - 2026-05-06
+
+### Release Packaging
+- fix: ship a signed and notarized macOS release archive and refresh the
+  Homebrew checksum for the patch release.
+
+## 0.7.0 - 2026-05-06
+
+### Private API Bridge
+- feat: port the BlueBubbles-inspired private-API bridge surface for rich sends,
+  message mutation, chat management, account/nickname introspection, and live
+  bridge events; add local DB search and v2 concurrent bridge IPC (#100, thanks
+  @omarshahine).
+- fix: route default bridge calls over v2 IPC when available and reject
+  unsupported `chat-create --service SMS` requests instead of reporting a
+  service that was not applied.
+- fix: decode typedstream attributed bodies with `0x81`/`0x82` length prefixes
+  so long fallback message text is preserved in history and watch output (#99,
+  thanks @SagarSDagdu).
+
+### Docs And CI
+- docs: publish the per-feature docs site at `imsg.sh` and add
+  syntax-highlighted code examples.
+- ci: update GitHub Actions for the Node 24 runtime and quote workflow
+  architecture lookup.
+
+## 0.6.0 - 2026-05-05
+
+### More Reliable Live Streams And History
+- fix: keep `imsg watch` streams alive with a lightweight polling fallback when macOS misses filesystem events (#78).
+- fix: dedupe URL preview balloon messages in `watch` without dropping similar messages from other chats or older database schemas (#64, thanks @lesaai).
+- fix: decode UTF-16LE BOM attributed bodies so plain-text history output recovers messages whose `text` column is empty (#91, thanks @clawbunny).
+- fix: speed up JSON history output by batching attachment and reaction metadata lookups (#81, thanks @kacy).
+- fix: speed up chat listing by using `chat_message_join.message_date` when Messages provides it (#76, thanks @tmad4000).
+- docs: clarify stale Full Disk Access grants, Terminal.app permissions, and watch fallback polling requirements (#28, #32, #33, #46, #83, thanks @wangran870414).
+
+### Better Chat, Group, And Account Diagnostics
+- feat: add `imsg group --chat-id <id>` to inspect a chat's identifier, GUID, service, participants, account metadata, and group/direct status (#88, thanks @mryanb).
+- feat: resolve Contacts names in `chats`, `history`, `watch`, and direct sends while preserving raw handles for automation (#75, #77, thanks @regaw-leinad and @jsindy).
+- feat: expose read-only account routing hints (`account_id`, `account_login`, `last_addressed_handle`) for multi-number diagnostics (#18).
+- fix: include group metadata in CLI JSON history/watch output, not just RPC payloads (#57, thanks @clawbunny).
+
+### Sending, RPC, And Automation Fixes
+- fix: return best-effort sent message `id` and `guid` from RPC `send` responses when the row can be observed after Messages accepts the send (#85).
+- fix: expose RPC watch debounce and default it to 500ms to reduce outbound echo races (#72, #80).
+- fix: gate RPC watch reaction metadata on `include_reactions`, not `attachments` (#82).
+- fix: confirm standard tapback reaction selection in Messages automation before reporting success (#53, thanks @PeterRosdahl).
+- fix: reject unsupported custom emoji reaction sends instead of taking a no-op AppleScript path (#55).
+- fix: detect Tahoe group-send ghost rows and fail instead of reporting false success (#90, thanks @loop).
+- docs: document standard tapback sending and watch reaction events (#66, thanks @safaaleigh).
+
+### Attachments, Completions, And Install Polish
+- feat: optionally report model-compatible converted receive-side attachment files for CAF audio and GIF images (#73, thanks @mfzeidan).
+- feat: add shell completions and an LLM-oriented command reference generator (`imsg completions bash|zsh|fish|llm`) (#21, thanks @bdmorin).
+- fix: publish universal macOS release binaries for Homebrew installs (#68, #79).
+- docs: document the Homebrew install path in the README (#61, thanks @joshuayoes).
+- docs: clarify that `send --file` supports regular file and audio attachments through Messages.app (#35, thanks @rock19).
+- docs: add a local release helper for dispatching Homebrew tap updates (#97, thanks @dinakars777).
+
+### Advanced IMCore / Tahoe Notes
+- feat: add advanced IMCore controls for `status`, `launch`, `read`, and typing diagnostics.
+- fix: normalize IMCore typing chat lookup across `iMessage`, `SMS`, and `any` prefixes (#51, #54, #56, #58).
+- fix: report macOS 26/Tahoe IMCore typing entitlement failures as advanced-feature setup errors instead of misleading chat lookup failures (#60).
+- docs: document macOS 26 advanced IMCore injection, library-validation, and private-entitlement limits (#60).
+
+### Internal Safety
+- refactor: centralize Messages schema detection, row decoding, query assembly, typed row IDs, and attachment/reaction query paths behind smaller `MessageStore` extensions.
+- test: expand release packaging, CLI metadata, schema-compatibility, JSON newline, stdout capture, and live-read coverage.
 
 ## 0.5.0 - 2026-02-16
 

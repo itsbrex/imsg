@@ -28,8 +28,16 @@ enum WatchCommand {
             label: "attachments", names: [.long("attachments")], help: "include attachment metadata"
           ),
           .make(
+            label: "convertAttachments", names: [.long("convert-attachments")],
+            help: "convert CAF/GIF attachments to model-compatible cached files"
+          ),
+          .make(
             label: "reactions", names: [.long("reactions")],
             help: "include reaction events (tapback add/remove) in the stream"
+          ),
+          .make(
+            label: "bbEvents", names: [.long("bb-events")],
+            help: "include dylib-pushed events (typing, alias-removed) when injection is active"
           ),
         ]
       )
@@ -46,6 +54,9 @@ enum WatchCommand {
     values: ParsedValues,
     runtime: RuntimeOptions,
     storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) },
+    contactResolverFactory: @escaping () async -> any ContactResolving = {
+      await ContactResolver.create()
+    },
     streamProvider:
       @escaping (
         MessageWatcher,
@@ -64,6 +75,8 @@ enum WatchCommand {
     }
     let sinceRowID = values.optionInt64("sinceRowID")
     let showAttachments = values.flag("attachments")
+    let attachmentOptions = AttachmentQueryOptions(
+      convertUnsupported: values.flag("convertAttachments"))
     let includeReactions = values.flag("reactions")
     let participants = values.optionValues("participants")
       .flatMap { $0.split(separator: ",").map { String($0) } }
@@ -76,11 +89,35 @@ enum WatchCommand {
 
     let store = try storeFactory(dbPath)
     let watcher = MessageWatcher(store: store)
+    let cache = ChatCache(store: store)
+    let contacts = await contactResolverFactory()
     let config = MessageWatcherConfiguration(
       debounceInterval: debounceInterval,
       batchLimit: 100,
       includeReactions: includeReactions
     )
+
+    let bbEvents = values.flag("bbEvents")
+    if bbEvents {
+      let path = MessagesLauncher.shared.bridgeEventsFile
+      let tailer = IMsgEventTailer(path: path)
+      Task {
+        for await event in tailer.events() {
+          if runtime.jsonOutput {
+            var obj: [String: Any] = [
+              "kind": "bridge-event",
+              "event": event.name,
+            ]
+            if let ts = event.timestamp { obj["ts"] = ts }
+            obj["data"] = event.decodedPayload()
+            try? JSONLines.printObject(obj)
+          } else {
+            let stamp = event.timestamp ?? CLIISO8601.format(Date())
+            StdoutWriter.writeLine("\(stamp) [bridge] \(event.name)")
+          }
+        }
+      }
+    }
 
     let stream = streamProvider(watcher, chatID, sinceRowID, config)
     for try await message in stream {
@@ -88,40 +125,46 @@ enum WatchCommand {
         continue
       }
       if runtime.jsonOutput {
-        let attachments = try store.attachments(for: message.rowID)
-        let reactions = try store.reactions(for: message.rowID)
-        let payload = MessagePayload(
+        let payload = try await buildMessagePayload(
+          store: store,
+          cache: cache,
           message: message,
-          attachments: attachments,
-          reactions: reactions
+          includeAttachments: true,
+          includeReactions: true,
+          attachmentOptions: attachmentOptions,
+          contactResolver: contacts
         )
         if IMsgSchema.envOverride == "v1" {
           let kind = message.isReaction ? "reaction" : "message"
-          try JSONLines.printEnvelope(kind: kind, data: payload)
+          try JSONLines.printObject([
+            "schema": IMsgSchema.currentVersion,
+            "kind": kind,
+            "data": payload,
+          ])
         } else {
-          try StdoutWriter.writeJSONLine(payload)
+          try JSONLines.printObject(payload)
         }
         continue
       }
       let direction = message.isFromMe ? "sent" : "recv"
       let timestamp = CLIISO8601.format(message.date)
+      let sender =
+        message.isFromMe
+        ? message.sender : (contacts.displayName(for: message.sender) ?? message.sender)
       if message.isReaction, let reactionType = message.reactionType {
         let action = (message.isReactionAdd ?? true) ? "added" : "removed"
         let targetGUID = message.reactedToGUID ?? "unknown"
         StdoutWriter.writeLine(
-          "\(timestamp) [\(direction)] \(message.sender) \(action) \(reactionType.emoji) reaction to \(targetGUID)"
+          "\(timestamp) [\(direction)] \(sender) \(action) \(reactionType.emoji) reaction to \(targetGUID)"
         )
         continue
       }
-      StdoutWriter.writeLine("\(timestamp) [\(direction)] \(message.sender): \(message.text)")
+      StdoutWriter.writeLine("\(timestamp) [\(direction)] \(sender): \(message.text)")
       if message.attachmentsCount > 0 {
         if showAttachments {
-          let metas = try store.attachments(for: message.rowID)
+          let metas = try store.attachments(for: message.rowID, options: attachmentOptions)
           for meta in metas {
-            let name = displayName(for: meta)
-            StdoutWriter.writeLine(
-              "  attachment: name=\(name) mime=\(meta.mimeType) missing=\(meta.missing) path=\(meta.originalPath)"
-            )
+            StdoutWriter.writeLine(attachmentMetadataLine(for: meta))
           }
         } else {
           StdoutWriter.writeLine(

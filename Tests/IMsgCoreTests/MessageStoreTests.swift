@@ -36,14 +36,6 @@ private func makeInMemoryMessageDB(
 }
 
 @Test
-func listChatsReturnsChat() throws {
-  let store = try TestDatabase.makeStore()
-  let chats = try store.listChats(limit: 5)
-  #expect(chats.count == 1)
-  #expect(chats.first?.identifier == "+123")
-}
-
-@Test
 func chatInfoReturnsMetadata() throws {
   let store = try TestDatabase.makeStore()
   let info = try store.chatInfo(chatID: 1)
@@ -51,6 +43,22 @@ func chatInfoReturnsMetadata() throws {
   #expect(info?.guid == "iMessage;+;chat123")
   #expect(info?.name == "Test Chat")
   #expect(info?.service == "iMessage")
+  #expect(info?.accountID == "iMessage;+;me@icloud.com")
+  #expect(info?.accountLogin == "me@icloud.com")
+  #expect(info?.lastAddressedHandle == "+15551234567")
+}
+
+@Test
+func sqlRowDecodingThrowsWhenRequiredAliasIsMissing() throws {
+  let db = try Connection(.inMemory)
+  let store = try MessageStore(connection: db, path: ":memory:")
+  try store.withConnection { db in
+    let rows = try db.prepareRowIterator("SELECT 1 AS actual_value")
+    let row = try #require(try rows.failableNext())
+    #expect(throws: (any Error).self) {
+      _ = try store.int64Value(row, "expected_value")
+    }
+  }
 }
 
 @Test
@@ -385,6 +393,17 @@ func attachmentsByMessageReturnsMetadata() throws {
   let attachments = try store.attachments(for: 2)
   #expect(attachments.count == 1)
   #expect(attachments.first?.mimeType == "application/octet-stream")
+}
+
+@Test
+func attachmentsByMessagesReturnsMetadataByMessageID() throws {
+  let store = try TestDatabase.makeStore()
+  let attachmentsByMessageID = try store.attachments(for: [1, 2, 2, 3])
+
+  #expect(attachmentsByMessageID[1]?.isEmpty != false)
+  #expect(attachmentsByMessageID[2]?.count == 1)
+  #expect(attachmentsByMessageID[2]?.first?.mimeType == "application/octet-stream")
+  #expect(attachmentsByMessageID[3]?.isEmpty != false)
 }
 
 @Test

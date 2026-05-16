@@ -30,6 +30,160 @@ func attachmentResolverDisplayNamePrefersTransfer() {
 }
 
 @Test
+func attachmentResolverReportsCachedConvertedCAF() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let source = dir.appendingPathComponent("voice.caf")
+  try Data("caf".utf8).write(to: source)
+  let converted = AttachmentResolver.convertedURL(for: source.path, targetExtension: "m4a")
+  try FileManager.default.createDirectory(
+    at: converted.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  try Data("m4a".utf8).write(to: converted)
+  defer { try? FileManager.default.removeItem(at: converted) }
+
+  let meta = AttachmentResolver.metadata(
+    filename: source.path,
+    transferName: "voice.caf",
+    uti: "com.apple.coreaudio-format",
+    mimeType: "audio/x-caf",
+    totalBytes: 3,
+    isSticker: false,
+    options: AttachmentQueryOptions(convertUnsupported: true)
+  )
+
+  #expect(meta.originalPath == source.path)
+  #expect(meta.convertedPath == converted.path)
+  #expect(meta.convertedMimeType == "audio/mp4")
+  #expect(meta.mimeType == "audio/x-caf")
+}
+
+@Test
+func attachmentResolverConversionDoesNotBlockOnConverterOutput() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let source = dir.appendingPathComponent("voice.caf")
+  try Data("caf".utf8).write(to: source)
+  let converted = AttachmentResolver.convertedURL(for: source.path, targetExtension: "m4a")
+  try? FileManager.default.removeItem(at: converted)
+  defer { try? FileManager.default.removeItem(at: converted) }
+
+  let fakeFFmpeg = dir.appendingPathComponent("ffmpeg")
+  try """
+  #!/bin/sh
+  last=""
+  for arg in "$@"; do
+    last="$arg"
+  done
+  i=0
+  while [ "$i" -lt 2048 ]; do
+    printf '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\n' >&2
+    i=$((i + 1))
+  done
+  printf converted > "$last"
+  exit 0
+  """.write(to: fakeFFmpeg, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeFFmpeg.path)
+
+  let oldPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+  setenv("PATH", "\(dir.path):\(oldPath)", 1)
+  defer { setenv("PATH", oldPath, 1) }
+
+  let meta = AttachmentResolver.metadata(
+    filename: source.path,
+    transferName: "voice.caf",
+    uti: "com.apple.coreaudio-format",
+    mimeType: "audio/x-caf",
+    totalBytes: 3,
+    isSticker: false,
+    options: AttachmentQueryOptions(convertUnsupported: true)
+  )
+
+  #expect(meta.convertedPath == converted.path)
+  #expect(meta.convertedMimeType == "audio/mp4")
+}
+
+@Test
+func attachmentResolverLeavesUnsupportedFilesUnconverted() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let source = dir.appendingPathComponent("file.txt")
+  try Data("text".utf8).write(to: source)
+  let meta = AttachmentResolver.metadata(
+    filename: source.path,
+    transferName: "file.txt",
+    uti: "public.plain-text",
+    mimeType: "text/plain",
+    totalBytes: 4,
+    isSticker: false,
+    options: AttachmentQueryOptions(convertUnsupported: true)
+  )
+
+  #expect(meta.convertedPath == nil)
+  #expect(meta.convertedMimeType == nil)
+}
+
+@Test
+func securePathDetectsFinalSymlink() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let target = dir.appendingPathComponent("target.txt")
+  let link = dir.appendingPathComponent("link.txt")
+  try Data("hello".utf8).write(to: target)
+  try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+  #expect(SecurePath.hasSymlinkComponent(target.path) == false)
+  #expect(SecurePath.hasSymlinkComponent(link.path) == true)
+}
+
+@Test
+func securePathDetectsParentSymlink() throws {
+  let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let realParent = dir.appendingPathComponent("real")
+  let linkParent = dir.appendingPathComponent("linked")
+  try FileManager.default.createDirectory(at: realParent, withIntermediateDirectories: true)
+  try FileManager.default.createSymbolicLink(at: linkParent, withDestinationURL: realParent)
+
+  let realChild = realParent.appendingPathComponent("child.txt")
+  let linkedChild = linkParent.appendingPathComponent("child.txt")
+  try Data("hello".utf8).write(to: realChild)
+
+  #expect(SecurePath.hasSymlinkComponent(realChild.path) == false)
+  #expect(SecurePath.hasSymlinkComponent(linkedChild.path) == true)
+}
+
+@Test
+func securePathAllowsTrustedSystemAliasPrefixes() throws {
+  let privateTmp = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+  let dirName = "imsg-secure-path-\(UUID().uuidString)"
+  let realDir = privateTmp.appendingPathComponent(dirName)
+  try FileManager.default.createDirectory(at: realDir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: realDir) }
+
+  let realFile = realDir.appendingPathComponent("target.txt")
+  try Data("hello".utf8).write(to: realFile)
+
+  let aliasFile = "/tmp/\(dirName)/target.txt"
+  #expect(SecurePath.hasSymlinkComponent(aliasFile) == false)
+
+  let link = realDir.appendingPathComponent("link.txt")
+  try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realFile)
+  #expect(SecurePath.hasSymlinkComponent("/tmp/\(dirName)/link.txt") == true)
+}
+
+@Test
 func iso8601ParserParsesFormats() {
   let fractional = "2024-01-02T03:04:05.678Z"
   let standard = "2024-01-02T03:04:05Z"
@@ -100,6 +254,92 @@ func typedStreamParserTrimsControlCharacters() {
   let bytes: [UInt8] = [0x00, 0x0A] + Array("hello".utf8)
   let data = Data(bytes)
   #expect(TypedStreamParser.parseAttributedBody(data) == "hello")
+}
+
+@Test
+func typedStreamParserDecodesShortSingleBytePrefix() {
+  let text = "hello"
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodesMediumMessageWith0x81Prefix() {
+  let text = String(repeating: "A", count: 140)
+  let length = UInt8(text.utf8.count)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, 0x81, length] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodesLongMessageWith0x82Prefix() {
+  let text = String(repeating: "B", count: 300)
+  let length = UInt16(text.utf8.count)
+  let lengthHi = UInt8((length >> 8) & 0xff)
+  let lengthLo = UInt8(length & 0xff)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, 0x82, lengthHi, lengthLo] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDoesNotPrependPrintableAsciiLengthByte() {
+  // 64-byte body of 'A' → length byte 0x40 ('@'), printable.
+  // Without the structured-prefix-wins rule, the raw decode keeps the '@' and beats the stripped body by one character.
+  let text = String(repeating: "A", count: 64)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodes32ByteBodyAtLowerRegressionEdge() {
+  // 32-byte body → length byte 0x20 (space). Lower edge of the 32–126 printable-ASCII window.
+  let text = String(repeating: "A", count: 32)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodes126ByteBodyAtUpperRegressionEdge() {
+  // 126-byte body → length byte 0x7E ('~'). Upper edge of the window — 0x7F is DEL/control and
+  // would be trimmed (not prepended), so 0x7E is the precise top of the failure range.
+  let text = String(repeating: "A", count: 126)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserDecodesMultibyteUTF8BodyInRegressionWindow() {
+  // 12 × 🎉 = 48 UTF-8 bytes → length byte 0x30 ('0'), printable. Confirms the structured-prefix
+  // preference works for non-ASCII bodies too — the bug is byte-count driven, not ASCII-specific.
+  let text = String(repeating: "🎉", count: 12)
+  let bytes: [UInt8] =
+    [0x01, 0x2b, UInt8(text.utf8.count)] + Array(text.utf8) + [0x86, 0x84]
+  #expect(TypedStreamParser.parseAttributedBody(Data(bytes)) == text)
+}
+
+@Test
+func typedStreamParserHandlesMixedBinaryNoise() {
+  // First byte 0x42 is neither 0x81 nor 0x82, and does not equal segment.count - 1 (= 6).
+  // The decoder should fall back to no-prefix decoding without crashing.
+  let bytes: [UInt8] =
+    [0x01, 0x2b, 0x42, 0x68, 0x69, 0x21, 0x86, 0x84]
+  let result = TypedStreamParser.parseAttributedBody(Data(bytes))
+  #expect(result == "Bhi!")
+}
+
+@Test
+func typedStreamParserDecodesUTF16LittleEndianBOM() throws {
+  var data = Data([0xff, 0xfe])
+  let body = "hello 🌤️"
+  let encoded = try #require(body.data(using: .utf16LittleEndian))
+  data.append(encoded)
+  #expect(TypedStreamParser.parseAttributedBody(data) == body)
 }
 
 @Test
@@ -317,4 +557,7 @@ func errorDescriptionsIncludeDetails() {
   let permissionDescription = permission.errorDescription ?? ""
   #expect(permissionDescription.contains("Permission Error") == true)
   #expect(permissionDescription.contains("/tmp/chat.db") == true)
+  #expect(permissionDescription.contains("parent launcher") == true)
+  #expect(permissionDescription.contains("built-in Terminal.app") == true)
+  #expect(permissionDescription.contains("stale entries") == true)
 }

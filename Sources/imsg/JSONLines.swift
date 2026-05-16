@@ -24,4 +24,10 @@ enum JSONLines {
     let envelope = EnvelopePayload(kind: kind, data: data)
     try print(envelope)
   }
+
+  static func printObject(_ value: Any) throws {
+    let data = try JSONSerialization.data(withJSONObject: value, options: [])
+    guard let line = String(data: data, encoding: .utf8), !line.isEmpty else { return }
+    StdoutWriter.writeLine(line)
+  }
 }

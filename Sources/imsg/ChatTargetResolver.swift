@@ -1,3 +1,4 @@
+import Foundation
 import IMsgCore
 
 struct ChatTargetInput: Sendable {
@@ -56,5 +57,77 @@ enum ChatTargetResolver {
       chatIdentifier: resolvedIdentifier,
       chatGUID: resolvedGUID
     )
+  }
+
+  static func directTypingIdentifier(
+    recipient: String,
+    serviceRaw: String,
+    invalidServiceError: (String) -> Error
+  ) throws -> String {
+    guard let service = MessageService(rawValue: serviceRaw.lowercased()) else {
+      throw invalidServiceError(serviceRaw)
+    }
+    let prefix = service == .sms ? "SMS" : "iMessage"
+    return "\(prefix);-;\(recipient)"
+  }
+
+  static func directChatCandidates(recipient: String, service: MessageService) -> [String] {
+    let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return [] }
+
+    var candidates: [String] = []
+    func append(_ value: String) {
+      if !candidates.contains(value) {
+        candidates.append(value)
+      }
+    }
+
+    switch service {
+    case .sms:
+      append("SMS;-;\(trimmed)")
+    case .imessage:
+      append("iMessage;-;\(trimmed)")
+      append("any;-;\(trimmed)")
+    case .auto:
+      append("iMessage;-;\(trimmed)")
+      append("any;-;\(trimmed)")
+      append("SMS;-;\(trimmed)")
+    }
+    append(trimmed)
+    return candidates
+  }
+
+  static func looksLikeContactName(_ recipient: String) -> Bool {
+    let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return false }
+    if trimmed.contains("@") { return false }
+    if trimmed.hasPrefix("+") { return false }
+    let phoneCharacters = CharacterSet(charactersIn: "0123456789-(). ")
+    if trimmed.unicodeScalars.allSatisfy({ phoneCharacters.contains($0) }) {
+      return false
+    }
+    return true
+  }
+
+  static func resolveRecipientName(
+    _ recipient: String,
+    contacts: any ContactResolving
+  ) throws -> String {
+    guard looksLikeContactName(recipient) else { return recipient }
+    let matches = contacts.searchByName(recipient)
+    switch matches.count {
+    case 0:
+      return recipient
+    case 1:
+      return matches[0].handle
+    default:
+      let details =
+        matches
+        .map { "  \($0.name): \($0.handle)" }
+        .joined(separator: "\n")
+      throw IMsgError.invalidChatTarget(
+        "Multiple contacts match \"\(recipient)\":\n\(details)\nSpecify a phone number or email instead."
+      )
+    }
   }
 }

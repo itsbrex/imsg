@@ -12,19 +12,41 @@ enum CommandTestDatabase {
   static func makePath() throws -> String {
     let path = try makeDatabasePath()
     let db = try Connection(path)
-    try createSchema(db, includeChatHandleJoin: false)
+    try createSchema(db, includeChatHandleJoin: true)
     try seedBasicChat(db)
     return path
   }
 
-  static func makePathWithAttachment() throws -> String {
+  static func makePathDirectChat() throws -> String {
+    let path = try makePath()
+    let db = try Connection(path)
+    try db.run(
+      """
+      UPDATE chat
+      SET chat_identifier = '+123', guid = 'iMessage;-;+123', display_name = 'Direct Chat'
+      WHERE ROWID = 1
+      """
+    )
+    return path
+  }
+
+  static func makePathWithAttachment(
+    filename: String = "/tmp/file.dat",
+    transferName: String = "file.dat",
+    uti: String = "public.data",
+    mimeType: String = "application/octet-stream"
+  ) throws -> String {
     let path = try makePath()
     let db = try Connection(path)
     try db.run(
       """
       INSERT INTO attachment(ROWID, filename, transfer_name, uti, mime_type, total_bytes, is_sticker)
-      VALUES (1, '/tmp/file.dat', 'file.dat', 'public.data', 'application/octet-stream', 10, 0)
-      """
+      VALUES (1, ?, ?, ?, ?, 10, 0)
+      """,
+      filename,
+      transferName,
+      uti,
+      mimeType
     )
     try db.run("INSERT INTO message_attachment_join(message_id, attachment_id) VALUES (1, 1)")
     return path
@@ -42,19 +64,98 @@ enum CommandTestDatabase {
     )
   }
 
+  static func makeStoreForRPCDirectChat() throws -> MessageStore {
+    let db = try Connection(.inMemory)
+    try createSchema(db, includeChatHandleJoin: true)
+    try seedRPCChat(db)
+    try db.run(
+      """
+      UPDATE chat
+      SET chat_identifier = '+123', guid = 'iMessage;-;+123', display_name = 'Direct Chat'
+      WHERE ROWID = 1
+      """
+    )
+    return try MessageStore(
+      connection: db,
+      path: ":memory:",
+      hasAttributedBody: false,
+      hasReactionColumns: false
+    )
+  }
+
+  static func makeStoreForRPCWithAttachment(
+    filename: String,
+    transferName: String,
+    uti: String,
+    mimeType: String
+  ) throws -> MessageStore {
+    let db = try Connection(.inMemory)
+    try createSchema(db, includeChatHandleJoin: true)
+    try seedRPCChat(db)
+    try db.run(
+      """
+      INSERT INTO attachment(ROWID, filename, transfer_name, uti, mime_type, total_bytes, is_sticker)
+      VALUES (1, ?, ?, ?, ?, 10, 0)
+      """,
+      filename,
+      transferName,
+      uti,
+      mimeType
+    )
+    try db.run("INSERT INTO message_attachment_join(message_id, attachment_id) VALUES (5, 1)")
+    return try MessageStore(
+      connection: db,
+      path: ":memory:",
+      hasAttributedBody: false,
+      hasReactionColumns: false
+    )
+  }
+
+  static func makeStoreForRPCWithReaction() throws -> MessageStore {
+    let db = try Connection(.inMemory)
+    try createSchema(db, includeChatHandleJoin: true, includeReactionColumns: true)
+    try seedRPCChat(db)
+    try db.run("UPDATE message SET guid = 'msg-guid-5' WHERE ROWID = 5")
+    try db.run(
+      """
+      INSERT INTO message(
+        ROWID, handle_id, text, guid, associated_message_guid, associated_message_type,
+        date, is_from_me, service
+      )
+      VALUES (6, 2, '', 'reaction-guid-6', 'p:0/msg-guid-5', 2001, ?, 0, 'iMessage')
+      """,
+      appleEpoch(Date().addingTimeInterval(1))
+    )
+    try db.run("INSERT INTO chat_message_join(chat_id, message_id) VALUES (1, 6)")
+    return try MessageStore(connection: db, path: ":memory:")
+  }
+
   private static func makeDatabasePath() throws -> String {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir.appendingPathComponent("chat.db").path
   }
 
-  private static func createSchema(_ db: Connection, includeChatHandleJoin: Bool) throws {
+  private static func createSchema(
+    _ db: Connection,
+    includeChatHandleJoin: Bool,
+    includeReactionColumns: Bool = false
+  ) throws {
+    let reactionColumns =
+      includeReactionColumns
+      ? [
+        "guid TEXT",
+        "associated_message_guid TEXT",
+        "associated_message_type INTEGER",
+      ].joined(separator: ",\n") + ","
+      : ""
     try db.execute(
       """
       CREATE TABLE message (
         ROWID INTEGER PRIMARY KEY,
         handle_id INTEGER,
         text TEXT,
+        \(reactionColumns)
         date INTEGER,
         is_from_me INTEGER,
         service TEXT
@@ -68,7 +169,10 @@ enum CommandTestDatabase {
         chat_identifier TEXT,
         guid TEXT,
         display_name TEXT,
-        service_name TEXT
+        service_name TEXT,
+        account_id TEXT,
+        account_login TEXT,
+        last_addressed_handle TEXT
       );
       """
     )
@@ -98,11 +202,18 @@ enum CommandTestDatabase {
     let now = Date()
     try db.run(
       """
-      INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
-      VALUES (1, '+123', 'iMessage;+;chat123', 'Test Chat', 'iMessage')
+      INSERT INTO chat(
+        ROWID, chat_identifier, guid, display_name, service_name,
+        account_id, account_login, last_addressed_handle
+      )
+      VALUES (
+        1, '+123', 'iMessage;+;chat123', 'Test Chat', 'iMessage',
+        'iMessage;+;me@icloud.com', 'me@icloud.com', '+15551234567'
+      )
       """
     )
     try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123')")
+    try db.run("INSERT INTO chat_handle_join(chat_id, handle_id) VALUES (1, 1)")
     try db.run(
       """
       INSERT INTO message(ROWID, handle_id, text, date, is_from_me, service)
@@ -117,8 +228,14 @@ enum CommandTestDatabase {
     let now = Date()
     try db.run(
       """
-      INSERT INTO chat(ROWID, chat_identifier, guid, display_name, service_name)
-      VALUES (1, 'iMessage;+;chat123', 'iMessage;+;chat123', 'Group Chat', 'iMessage')
+      INSERT INTO chat(
+        ROWID, chat_identifier, guid, display_name, service_name,
+        account_id, account_login, last_addressed_handle
+      )
+      VALUES (
+        1, 'iMessage;+;chat123', 'iMessage;+;chat123', 'Group Chat', 'iMessage',
+        'iMessage;+;me@icloud.com', 'me@icloud.com', 'me@icloud.com'
+      )
       """
     )
     try db.run("INSERT INTO handle(ROWID, id) VALUES (1, '+123'), (2, 'me@icloud.com')")

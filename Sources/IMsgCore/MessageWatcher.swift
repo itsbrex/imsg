@@ -1,16 +1,24 @@
-import Darwin
 import Foundation
+
+#if os(macOS)
+  import Darwin
+#endif
 
 public struct MessageWatcherConfiguration: Sendable, Equatable {
   public var debounceInterval: TimeInterval
+  public var fallbackPollInterval: TimeInterval?
   public var batchLimit: Int
   /// When true, reaction events (tapback add/remove) are included in the stream
   public var includeReactions: Bool
 
   public init(
-    debounceInterval: TimeInterval = 0.25, batchLimit: Int = 100, includeReactions: Bool = false
+    debounceInterval: TimeInterval = 0.25,
+    fallbackPollInterval: TimeInterval? = 5,
+    batchLimit: Int = 100,
+    includeReactions: Bool = false
   ) {
     self.debounceInterval = debounceInterval
+    self.fallbackPollInterval = fallbackPollInterval
     self.batchLimit = batchLimit
     self.includeReactions = includeReactions
   }
@@ -52,8 +60,11 @@ private final class WatchState: @unchecked Sendable {
   private let queue = DispatchQueue(label: "imsg.watch", qos: .userInitiated)
 
   private var cursor: Int64
-  private var sources: [DispatchSourceFileSystemObject] = []
+  #if os(macOS)
+    private var sources: [DispatchSourceFileSystemObject] = []
+  #endif
   private var pending = false
+  private var stopped = false
 
   init(
     store: MessageStore,
@@ -81,54 +92,76 @@ private final class WatchState: @unchecked Sendable {
       }
     }
 
-    let paths = [store.path, store.path + "-wal", store.path + "-shm"]
-    for path in paths {
-      if let source = makeSource(path: path) {
-        sources.append(source)
+    #if os(macOS)
+      let paths = [store.path, store.path + "-wal", store.path + "-shm"]
+      for path in paths {
+        if let source = makeSource(path: path) {
+          sources.append(source)
+        }
       }
-    }
+    #endif
 
+    queue.async {
+      self.scheduleFallbackPoll()
+    }
   }
 
   func stop() {
     queue.async {
-      for source in self.sources {
-        source.cancel()
-      }
-      self.sources.removeAll()
+      self.stopped = true
+      #if os(macOS)
+        for source in self.sources {
+          source.cancel()
+        }
+        self.sources.removeAll()
+      #endif
     }
   }
 
-  private func makeSource(path: String) -> DispatchSourceFileSystemObject? {
-    let fd = open(path, O_EVTONLY)
-    guard fd >= 0 else { return nil }
-    let source = DispatchSource.makeFileSystemObjectSource(
-      fileDescriptor: fd,
-      eventMask: [.write, .extend, .rename, .delete],
-      queue: queue
-    )
-    source.setEventHandler { [weak self] in
-      self?.schedulePoll()
+  #if os(macOS)
+    private func makeSource(path: String) -> DispatchSourceFileSystemObject? {
+      let fd = open(path, O_EVTONLY)
+      guard fd >= 0 else { return nil }
+      let source = DispatchSource.makeFileSystemObjectSource(
+        fileDescriptor: fd,
+        eventMask: [.write, .extend, .rename, .delete],
+        queue: queue
+      )
+      source.setEventHandler { [weak self] in
+        self?.schedulePoll()
+      }
+      source.setCancelHandler {
+        close(fd)
+      }
+      source.resume()
+      return source
     }
-    source.setCancelHandler {
-      close(fd)
-    }
-    source.resume()
-    return source
-  }
+  #endif
 
   private func schedulePoll() {
+    if stopped { return }
     if pending { return }
     pending = true
     let delay = configuration.debounceInterval
     queue.asyncAfter(deadline: .now() + delay) { [weak self] in
       guard let self else { return }
+      if self.stopped { return }
       self.pending = false
       self.poll()
     }
   }
 
+  private func scheduleFallbackPoll() {
+    guard let interval = configuration.fallbackPollInterval, interval > 0 else { return }
+    queue.asyncAfter(deadline: .now() + interval) { [weak self] in
+      guard let self, !self.stopped else { return }
+      self.poll()
+      self.scheduleFallbackPoll()
+    }
+  }
+
   private func poll() {
+    if stopped { return }
     do {
       let messages = try store.messagesAfter(
         afterRowID: cursor,

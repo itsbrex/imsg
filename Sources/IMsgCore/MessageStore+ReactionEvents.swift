@@ -56,14 +56,18 @@ extension MessageStore {
   public func reactionEventsAfter(afterRowID: Int64, chatID: Int64?, limit: Int) throws
     -> [ReactionEvent]
   {
-    guard hasReactionColumns else { return [] }
+    guard schema.hasReactionColumns else { return [] }
 
-    let bodyColumn = hasAttributedBody ? "m.attributedBody" : "NULL"
-    let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
+    let bodyColumn = schema.hasAttributedBody ? "m.attributedBody" : "NULL"
+    let destinationCallerColumn =
+      schema.hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
 
     var sql = """
-      SELECT m.ROWID, cmj.chat_id, m.associated_message_type, m.associated_message_guid,
-             m.handle_id, h.id, m.is_from_me, m.date, IFNULL(m.text, '') AS text,
+      SELECT m.ROWID AS reaction_rowid, cmj.chat_id AS chat_id,
+             m.associated_message_type AS associated_message_type,
+             m.associated_message_guid AS associated_message_guid,
+             m.handle_id AS handle_id, h.id AS sender, m.is_from_me AS is_from_me,
+             m.date AS date, IFNULL(m.text, '') AS text,
              \(destinationCallerColumn) AS destination_caller_id,
              \(bodyColumn) AS body,
              orig.ROWID AS orig_rowid
@@ -87,19 +91,19 @@ extension MessageStore {
 
     return try withConnection { db in
       var events: [ReactionEvent] = []
-      for row in try db.prepare(sql, bindings) {
-        let rowID = int64Value(row[0]) ?? 0
-        let resolvedChatID = int64Value(row[1]) ?? chatID ?? 0
-        let typeValue = intValue(row[2]) ?? 0
-        let associatedGUID = stringValue(row[3])
-        // let handleID = int64Value(row[4])
-        var sender = stringValue(row[5])
-        let isFromMe = boolValue(row[6])
-        let date = appleDate(from: int64Value(row[7]))
-        let text = stringValue(row[8])
-        let destinationCallerID = stringValue(row[9])
-        let body = dataValue(row[10])
-        let origRowID = int64Value(row[11])
+      let rows = try db.prepareRowIterator(sql, bindings: bindings)
+      while let row = try rows.failableNext() {
+        let rowID = try int64Value(row, "reaction_rowid") ?? 0
+        let resolvedChatID = try int64Value(row, "chat_id") ?? chatID ?? 0
+        let typeValue = try intValue(row, "associated_message_type") ?? 0
+        let associatedGUID = try stringValue(row, "associated_message_guid")
+        var sender = try stringValue(row, "sender")
+        let isFromMe = try boolValue(row, "is_from_me")
+        let date = try appleDate(from: int64Value(row, "date"))
+        let text = try stringValue(row, "text")
+        let destinationCallerID = try stringValue(row, "destination_caller_id")
+        let body = try dataValue(row, "body")
+        let origRowID = try int64Value(row, "orig_rowid")
 
         if sender.isEmpty && !destinationCallerID.isEmpty {
           sender = destinationCallerID

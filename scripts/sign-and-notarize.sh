@@ -5,12 +5,15 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/version.env"
 
 APP_NAME="imsg"
+HELPER_NAME="imsg-bridge-helper.dylib"
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-"Developer ID Application: Peter Steinberger (Y5PE65HELJ)"}
 ENTITLEMENTS="${ROOT}/Resources/imsg.entitlements"
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp}"
 ZIP_PATH="${OUTPUT_DIR}/imsg-macos.zip"
 ARCHES_VALUE=${ARCHES:-"arm64 x86_64"}
 ARCH_LIST=( ${ARCHES_VALUE} )
+HELPER_ARCHES_VALUE=${HELPER_ARCHES:-"arm64e x86_64"}
+HELPER_ARCH_LIST=( ${HELPER_ARCHES_VALUE} )
 DIST_DIR="$(mktemp -d "/tmp/${APP_NAME}-dist.XXXXXX")"
 API_KEY_FILE="$(mktemp "/tmp/${APP_NAME}-notary.XXXXXX.p8")"
 
@@ -37,10 +40,22 @@ for ARCH in "${ARCH_LIST[@]}"; do
 done
 
 lipo -create "${BINARIES[@]}" -output "$DIST_DIR/imsg"
+HELPER_CLANG_ARCH_ARGS=()
+for ARCH in "${HELPER_ARCH_LIST[@]}"; do
+  HELPER_CLANG_ARCH_ARGS+=("-arch" "$ARCH")
+done
+clang -dynamiclib "${HELPER_CLANG_ARCH_ARGS[@]}" -fobjc-arc \
+  -Wno-arc-performSelector-leaks \
+  -framework Foundation \
+  -o "$DIST_DIR/$HELPER_NAME" \
+  "$ROOT/Sources/IMsgHelper/IMsgInjected.m"
 
 codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" \
   --entitlements "$ENTITLEMENTS" \
   "$DIST_DIR/imsg"
+codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" \
+  --identifier com.steipete.imsg.bridge-helper \
+  "$DIST_DIR/$HELPER_NAME"
 
 FIRST_ARCH="${ARCH_LIST[0]}"
 for bundle in "$ROOT/.build/${FIRST_ARCH}-apple-macosx/release"/*.bundle; do
@@ -66,6 +81,7 @@ xcrun notarytool submit "$ZIP_PATH" \
   --wait
 
 codesign --verify --strict --verbose=4 "$DIST_DIR/imsg"
+codesign --verify --strict --verbose=4 "$DIST_DIR/$HELPER_NAME"
 if ! spctl -a -t exec -vv "$DIST_DIR/imsg"; then
   echo "spctl check failed (CLI binaries often report 'not an app')." >&2
 fi

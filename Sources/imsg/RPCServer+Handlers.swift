@@ -1,6 +1,20 @@
 import Foundation
 import IMsgCore
 
+private enum RPCSendTransport: String {
+  case auto
+  case bridge
+  case applescript
+
+  static func parse(_ raw: String?) throws -> RPCSendTransport {
+    let value = raw?.lowercased() ?? "auto"
+    guard let transport = RPCSendTransport(rawValue: value) else {
+      throw RPCError.invalidParams("invalid transport")
+    }
+    return transport
+  }
+}
+
 extension RPCServer {
   func handleChatsList(id: Any?, params: [String: Any]) async throws {
     let limit = intParam(params["limit"]) ?? 20
@@ -15,6 +29,9 @@ extension RPCServer {
       let guid = info?.guid ?? ""
       let name = (info?.name.isEmpty == false ? info?.name : nil) ?? chat.name
       let service = info?.service ?? chat.service
+      let contactName =
+        isGroupHandle(identifier: identifier, guid: guid)
+        ? nil : contactResolver.displayName(for: identifier)
       payloads.append(
         chatPayload(
           id: chat.id,
@@ -23,7 +40,8 @@ extension RPCServer {
           name: name,
           service: service,
           lastMessageAt: chat.lastMessageAt,
-          participants: participants
+          participants: participants,
+          contactName: contactName
         ))
     }
 
@@ -39,6 +57,8 @@ extension RPCServer {
     let startISO = stringParam(params["start"])
     let endISO = stringParam(params["end"])
     let includeAttachments = boolParam(params["attachments"]) ?? false
+    let attachmentOptions = AttachmentQueryOptions(
+      convertUnsupported: boolParam(params["convert_attachments"]) ?? false)
     let filter = try MessageFilter.fromISO(
       participants: participants,
       startISO: startISO,
@@ -53,7 +73,10 @@ extension RPCServer {
         store: store,
         cache: cache,
         message: message,
-        includeAttachments: includeAttachments
+        includeAttachments: includeAttachments,
+        includeReactions: true,
+        attachmentOptions: attachmentOptions,
+        contactResolver: contactResolver
       )
       payloads.append(payload)
     }
@@ -68,13 +91,19 @@ extension RPCServer {
     let startISO = stringParam(params["start"])
     let endISO = stringParam(params["end"])
     let includeAttachments = boolParam(params["attachments"]) ?? false
+    let attachmentOptions = AttachmentQueryOptions(
+      convertUnsupported: boolParam(params["convert_attachments"]) ?? false)
     let includeReactions = boolParam(params["include_reactions"]) ?? false
+    let debounceInterval = try watchDebounceIntervalParam(params)
     let filter = try MessageFilter.fromISO(
       participants: participants,
       startISO: startISO,
       endISO: endISO
     )
-    let config = MessageWatcherConfiguration(includeReactions: includeReactions)
+    let config = MessageWatcherConfiguration(
+      debounceInterval: debounceInterval,
+      includeReactions: includeReactions
+    )
     let subID = await subscriptions.allocateID()
     let localStore = store
     let localWatcher = watcher
@@ -85,6 +114,9 @@ extension RPCServer {
     let localSinceRowID = sinceRowID
     let localConfig = config
     let localIncludeAttachments = includeAttachments
+    let localAttachmentOptions = attachmentOptions
+    let localIncludeReactions = includeReactions
+    let localContactResolver = contactResolver
     let task = Task {
       do {
         for try await message in localWatcher.stream(
@@ -98,7 +130,10 @@ extension RPCServer {
             store: localStore,
             cache: localCache,
             message: message,
-            includeAttachments: localIncludeAttachments
+            includeAttachments: localIncludeAttachments,
+            includeReactions: localIncludeReactions,
+            attachmentOptions: localAttachmentOptions,
+            contactResolver: localContactResolver
           )
           localWriter.sendNotification(
             method: "message",
@@ -136,18 +171,34 @@ extension RPCServer {
     guard let service = MessageService(rawValue: serviceRaw) else {
       throw RPCError.invalidParams("invalid service")
     }
+    let transport = try RPCSendTransport.parse(stringParam(params["transport"]))
     let region = stringParam(params["region"]) ?? "US"
-
-    let input = ChatTargetInput(
-      recipient: stringParam(params["to"]) ?? "",
+    let rawRecipient = stringParam(params["to"]) ?? ""
+    let rawInput = ChatTargetInput(
+      recipient: rawRecipient,
       chatID: int64Param(params["chat_id"]),
       chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
       chatGUID: stringParam(params["chat_guid"]) ?? ""
     )
     try ChatTargetResolver.validateRecipientRequirements(
-      input: input,
+      input: rawInput,
       mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
       missingRecipientError: RPCError.invalidParams("to is required for direct sends")
+    )
+    let recipient: String
+    do {
+      recipient =
+        rawInput.hasChatTarget || rawRecipient.isEmpty
+        ? rawRecipient
+        : try ChatTargetResolver.resolveRecipientName(rawRecipient, contacts: contactResolver)
+    } catch {
+      throw RPCError.invalidParams(error.localizedDescription)
+    }
+    let input = ChatTargetInput(
+      recipient: recipient,
+      chatID: rawInput.chatID,
+      chatIdentifier: rawInput.chatIdentifier,
+      chatGUID: rawInput.chatGUID
     )
 
     if text.isEmpty && file.isEmpty {
@@ -164,37 +215,246 @@ extension RPCServer {
     if input.hasChatTarget && resolvedTarget.preferredIdentifier == nil {
       throw RPCError.invalidParams("missing chat identifier or guid")
     }
+    let directChatInfo =
+      input.hasChatTarget
+      ? nil : try resolveDirectChatInfo(recipient: input.recipient, service: service)
 
-    try sendMessage(
-      MessageSendOptions(
-        recipient: input.recipient,
-        text: text,
-        attachmentPath: file,
-        service: service,
-        region: region,
-        chatIdentifier: resolvedTarget.chatIdentifier,
-        chatGUID: resolvedTarget.chatGUID
-      )
+    let options = MessageSendOptions(
+      recipient: input.recipient,
+      text: text,
+      attachmentPath: file,
+      service: service,
+      region: region,
+      chatIdentifier: resolvedTarget.chatIdentifier,
+      chatGUID: resolvedTarget.chatGUID
     )
+    let sentAt = Date()
+
+    if let bridgeChatGUID = bridgeChatGUID(
+      resolvedTarget: resolvedTarget, directChatInfo: directChatInfo),
+      transport != .applescript,
+      transport == .bridge || isBridgeReady()
+    {
+      do {
+        let data = try await sendViaBridge(
+          chatGUID: bridgeChatGUID,
+          text: text,
+          file: file
+        )
+        var result: [String: Any] = ["ok": true, "transport": "bridge"]
+        if let guid = data["messageGuid"] as? String, !guid.isEmpty {
+          result["guid"] = guid
+        }
+        respond(id: id, result: result)
+        return
+      } catch let err as RPCError {
+        if transport == .bridge {
+          throw err
+        }
+      } catch {
+        if transport == .bridge {
+          throw RPCError.internalError(String(describing: error))
+        }
+      }
+    } else if transport == .bridge {
+      throw RPCError.invalidParams("bridge transport requires an existing chat target")
+    }
+
+    try sendMessage(options)
+
+    let verificationChatID =
+      input.chatID
+      ?? resolvedTarget.preferredIdentifier.flatMap { try? store.chatInfo(matchingTarget: $0)?.id }
+      ?? directChatInfo?.id
+    let sentMessage = try? await resolveSentMessage(store, options, verificationChatID, sentAt)
+    if sentMessage == nil {
+      try SentMessageVerifier.throwIfMisroutedChatSend(
+        store: store,
+        options: options,
+        sentAt: sentAt
+      )
+    }
+    var result: [String: Any] = ["ok": true, "transport": "applescript"]
+    if let sentMessage {
+      result["id"] = sentMessage.rowID
+      if !sentMessage.guid.isEmpty {
+        result["guid"] = sentMessage.guid
+      }
+    }
+    respond(id: id, result: result)
+  }
+
+  /// `typing` — start/stop the local-user typing indicator. Mirrors the
+  /// `imsg typing` CLI surface (which is purely a wrapper over `TypingIndicator`)
+  /// so callers that talk to `imsg rpc` over JSON-RPC have parity with the CLI.
+  func handleTyping(params: [String: Any], id: Any?) async throws {
+    let isTyping = boolParam(params["typing"]) ?? true
+    let serviceRaw = stringParam(params["service"]) ?? "imessage"
+    let input = ChatTargetInput(
+      recipient: stringParam(params["to"]) ?? "",
+      chatID: int64Param(params["chat_id"]),
+      chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
+      chatGUID: stringParam(params["chat_guid"]) ?? ""
+    )
+    try ChatTargetResolver.validateRecipientRequirements(
+      input: input,
+      mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
+      missingRecipientError: RPCError.invalidParams("to is required")
+    )
+    let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
+      input: input,
+      lookupChat: { chatID in try await cache.info(chatID: chatID) },
+      unknownChatError: { chatID in
+        RPCError.invalidParams("unknown chat_id \(chatID)")
+      }
+    )
+    let identifier: String
+    if let preferred = resolvedTarget.preferredIdentifier {
+      identifier = preferred
+    } else if input.hasChatTarget {
+      throw RPCError.invalidParams("missing chat identifier or guid")
+    } else {
+      do {
+        guard let service = MessageService(rawValue: serviceRaw.lowercased()) else {
+          throw RPCError.invalidParams(serviceRaw)
+        }
+        if let info = try resolveDirectChatInfo(recipient: input.recipient, service: service),
+          let preferred = bridgeChatGUID(resolvedTarget: nil, directChatInfo: info)
+        {
+          identifier = preferred
+        } else {
+          identifier = try ChatTargetResolver.directTypingIdentifier(
+            recipient: input.recipient,
+            serviceRaw: serviceRaw,
+            invalidServiceError: { RPCError.invalidParams($0) }
+          )
+        }
+      } catch let err as RPCError {
+        throw err
+      }
+    }
+    if isTyping {
+      try startTyping(identifier)
+    } else {
+      try stopTyping(identifier)
+    }
     respond(id: id, result: ["ok": true])
+  }
+
+  /// `read` — mark all messages in a chat as read on this device, which also
+  /// fires a read-receipt to the sender if the chat has receipts enabled.
+  func handleRead(params: [String: Any], id: Any?) async throws {
+    let input = ChatTargetInput(
+      recipient: stringParam(params["to"]) ?? "",
+      chatID: int64Param(params["chat_id"]),
+      chatIdentifier: stringParam(params["chat_identifier"]) ?? "",
+      chatGUID: stringParam(params["chat_guid"]) ?? ""
+    )
+    try ChatTargetResolver.validateRecipientRequirements(
+      input: input,
+      mixedTargetError: RPCError.invalidParams("use to or chat_*; not both"),
+      missingRecipientError: RPCError.invalidParams("to is required")
+    )
+    let resolvedTarget = try await ChatTargetResolver.resolveChatTarget(
+      input: input,
+      lookupChat: { chatID in try await cache.info(chatID: chatID) },
+      unknownChatError: { chatID in
+        RPCError.invalidParams("unknown chat_id \(chatID)")
+      }
+    )
+    let handle: String
+    if let preferred = resolvedTarget.preferredIdentifier {
+      handle = preferred
+    } else if input.hasChatTarget {
+      throw RPCError.invalidParams("missing chat identifier or guid")
+    } else {
+      handle = input.recipient
+    }
+    try await IMCoreBridge.shared.markAsRead(handle: handle)
+    respond(id: id, result: ["ok": true])
+  }
+
+  private func resolveDirectChatInfo(recipient: String, service: MessageService) throws -> ChatInfo?
+  {
+    for candidate in ChatTargetResolver.directChatCandidates(recipient: recipient, service: service)
+    {
+      if let info = try store.chatInfo(matchingTarget: candidate) {
+        return info
+      }
+    }
+    return nil
+  }
+
+  private func bridgeChatGUID(
+    resolvedTarget: ResolvedChatTarget?,
+    directChatInfo: ChatInfo?
+  ) -> String? {
+    if let guid = resolvedTarget?.chatGUID, !guid.isEmpty { return guid }
+    if let identifier = resolvedTarget?.chatIdentifier, !identifier.isEmpty { return identifier }
+    if let guid = directChatInfo?.guid, !guid.isEmpty { return guid }
+    if let identifier = directChatInfo?.identifier, !identifier.isEmpty { return identifier }
+    return nil
+  }
+
+  private func sendViaBridge(
+    chatGUID: String,
+    text: String,
+    file: String
+  ) async throws -> [String: Any] {
+    if !file.isEmpty {
+      guard text.isEmpty else {
+        throw RPCError.invalidParams("bridge transport does not support text and file together")
+      }
+      let stagedFile = try stageAttachment(file)
+      return try await bridgeInvoker(
+        .sendAttachment,
+        ["chatGuid": chatGUID, "filePath": stagedFile, "isAudioMessage": false]
+      )
+    }
+    return try await bridgeInvoker(.sendMessage, ["chatGuid": chatGUID, "message": text])
   }
 }
 
-private func buildMessagePayload(
+func buildMessagePayload(
   store: MessageStore,
   cache: ChatCache,
   message: Message,
-  includeAttachments: Bool
+  includeAttachments: Bool,
+  includeReactions: Bool,
+  prefetchedAttachments: [AttachmentMeta]? = nil,
+  prefetchedReactions: [Reaction]? = nil,
+  attachmentOptions: AttachmentQueryOptions = .default,
+  contactResolver: any ContactResolving = NoOpContactResolver()
 ) async throws -> [String: Any] {
   let chatInfo = try await cache.info(chatID: message.chatID)
   let participants = try await cache.participants(chatID: message.chatID)
-  let attachments = includeAttachments ? try store.attachments(for: message.rowID) : []
-  let reactions = includeAttachments ? try store.reactions(for: message.rowID) : []
+  let attachments: [AttachmentMeta]
+  if includeAttachments {
+    attachments =
+      try prefetchedAttachments ?? store.attachments(for: message.rowID, options: attachmentOptions)
+  } else {
+    attachments = []
+  }
+  let reactions: [Reaction]
+  if includeReactions {
+    reactions = try prefetchedReactions ?? store.reactions(for: message.rowID)
+  } else {
+    reactions = []
+  }
+  let senderName = message.isFromMe ? nil : contactResolver.displayName(for: message.sender)
+  var reactionSenderNames: [Int64: String] = [:]
+  for reaction in reactions where !reaction.isFromMe {
+    if let name = contactResolver.displayName(for: reaction.sender) {
+      reactionSenderNames[reaction.rowID] = name
+    }
+  }
   return try messagePayload(
     message: message,
     chatInfo: chatInfo,
     participants: participants,
     attachments: attachments,
-    reactions: reactions
+    reactions: reactions,
+    senderName: senderName,
+    reactionSenderNames: reactionSenderNames
   )
 }

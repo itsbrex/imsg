@@ -21,7 +21,11 @@ enum HistoryCommand {
         flags: [
           .make(
             label: "attachments", names: [.long("attachments")], help: "include attachment metadata"
-          )
+          ),
+          .make(
+            label: "convertAttachments", names: [.long("convert-attachments")],
+            help: "convert CAF/GIF attachments to model-compatible cached files"
+          ),
         ]
       )
     ),
@@ -30,12 +34,24 @@ enum HistoryCommand {
       "imsg history --chat-id 1 --start 2025-01-01T00:00:00Z --json",
     ]
   ) { values, runtime in
+    try await run(values: values, runtime: runtime)
+  }
+
+  static func run(
+    values: ParsedValues,
+    runtime: RuntimeOptions,
+    contactResolverFactory: @escaping () async -> any ContactResolving = {
+      await ContactResolver.create()
+    }
+  ) async throws {
     guard let chatID = values.optionInt64("chatID") else {
       throw ParsedValuesError.missingOption("chat-id")
     }
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let limit = values.optionInt("limit") ?? 50
     let showAttachments = values.flag("attachments")
+    let attachmentOptions = AttachmentQueryOptions(
+      convertUnsupported: values.flag("convertAttachments"))
     let participants = values.optionValues("participants")
       .flatMap { $0.split(separator: ",").map { String($0) } }
       .filter { !$0.isEmpty }
@@ -47,20 +63,35 @@ enum HistoryCommand {
 
     let store = try MessageStore(path: dbPath)
     let filtered = try store.messages(chatID: chatID, limit: limit, filter: filter)
+    let contacts = await contactResolverFactory()
 
     if runtime.jsonOutput {
+      let cache = ChatCache(store: store)
+      let attachmentsByMessageID = try store.attachments(
+        for: filtered.map(\.rowID),
+        options: attachmentOptions
+      )
+      let reactionsByMessageID = try store.reactions(for: filtered)
       for message in filtered {
-        let attachments = try store.attachments(for: message.rowID)
-        let reactions = try store.reactions(for: message.rowID)
-        let payload = MessagePayload(
+        let payload = try await buildMessagePayload(
+          store: store,
+          cache: cache,
           message: message,
-          attachments: attachments,
-          reactions: reactions
+          includeAttachments: true,
+          includeReactions: true,
+          prefetchedAttachments: attachmentsByMessageID[message.rowID] ?? [],
+          prefetchedReactions: reactionsByMessageID[message.rowID] ?? [],
+          attachmentOptions: attachmentOptions,
+          contactResolver: contacts
         )
         if IMsgSchema.envOverride == "v1" {
-          try JSONLines.printEnvelope(kind: "message", data: payload)
+          try JSONLines.printObject([
+            "schema": IMsgSchema.currentVersion,
+            "kind": "message",
+            "data": payload,
+          ])
         } else {
-          try StdoutWriter.writeJSONLine(payload)
+          try JSONLines.printObject(payload)
         }
       }
       return
@@ -69,15 +100,15 @@ enum HistoryCommand {
     for message in filtered {
       let direction = message.isFromMe ? "sent" : "recv"
       let timestamp = CLIISO8601.format(message.date)
-      StdoutWriter.writeLine("\(timestamp) [\(direction)] \(message.sender): \(message.text)")
+      let sender =
+        message.isFromMe
+        ? message.sender : (contacts.displayName(for: message.sender) ?? message.sender)
+      StdoutWriter.writeLine("\(timestamp) [\(direction)] \(sender): \(message.text)")
       if message.attachmentsCount > 0 {
         if showAttachments {
-          let metas = try store.attachments(for: message.rowID)
+          let metas = try store.attachments(for: message.rowID, options: attachmentOptions)
           for meta in metas {
-            let name = displayName(for: meta)
-            StdoutWriter.writeLine(
-              "  attachment: name=\(name) mime=\(meta.mimeType) missing=\(meta.missing) path=\(meta.originalPath)"
-            )
+            StdoutWriter.writeLine(attachmentMetadataLine(for: meta))
           }
         } else {
           StdoutWriter.writeLine(

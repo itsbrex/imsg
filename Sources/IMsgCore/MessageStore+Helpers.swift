@@ -11,10 +11,10 @@ extension MessageStore {
 
   static func tableColumns(connection: Connection, table: String) -> Set<String> {
     do {
-      let rows = try connection.prepare("PRAGMA table_info(\(table))")
+      let rows = try connection.prepareRowIterator("PRAGMA table_info(\(table))")
       var columns = Set<String>()
-      for row in rows {
-        if let name = row[1] as? String {
+      while let row = try rows.failableNext() {
+        if let name = try row.get(Expression<String?>("name")) {
           columns.insert(name.lowercased())
         }
       }

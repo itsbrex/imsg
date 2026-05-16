@@ -16,7 +16,9 @@ enum ReactCommand {
 
       Reaction types:
         love (❤️), like (👍), dislike (👎), laugh (😂), emphasis (‼️), question (❓)
-        Or any single emoji for custom reactions (iOS 17+ / macOS 14+)
+
+      Custom emoji tapbacks can be read from history/watch output, but cannot be
+      sent reliably through Messages.app AppleScript automation.
       """,
     signature: CommandSignatures.withRuntimeFlags(
       CommandSignature(
@@ -24,7 +26,7 @@ enum ReactCommand {
           .make(label: "chatID", names: [.long("chat-id")], help: "chat rowid to react in"),
           .make(
             label: "reaction", names: [.long("reaction"), .short("r")],
-            help: "reaction type: love, like, dislike, laugh, emphasis, question, or emoji"),
+            help: "reaction type: love, like, dislike, laugh, emphasis, question"),
         ],
         flags: []
       )
@@ -32,7 +34,6 @@ enum ReactCommand {
     usageExamples: [
       "imsg react --chat-id 1 --reaction like",
       "imsg react --chat-id 1 -r love",
-      "imsg react --chat-id 1 -r 🎉",
     ]
   ) { values, runtime in
     try await run(values: values, runtime: runtime)
@@ -57,6 +58,12 @@ enum ReactCommand {
     }
     if case .custom(let emoji) = reactionType, !isSingleEmoji(emoji) {
       throw IMsgError.invalidReaction(reactionString)
+    }
+    if case .custom(let emoji) = reactionType {
+      throw IMsgError.unsupportedReaction(
+        "custom emoji tapback '\(emoji)' cannot be sent by Messages.app "
+          + "AppleScript automation; use love, like, dislike, laugh, emphasis, or question."
+      )
     }
 
     // Get chat info for the GUID
@@ -103,40 +110,11 @@ enum ReactCommand {
     case .laugh: keyNumber = 4
     case .emphasis: keyNumber = 5
     case .question: keyNumber = 6
-    case .custom:
-      let script = """
-        on run argv
-          set chatGUID to item 1 of argv
-          set chatLookup to item 2 of argv
-          set customEmoji to item 3 of argv
-
-          tell application "Messages"
-            activate
-            set targetChat to chat id chatGUID
-          end tell
-
-          delay 0.3
-
-          tell application "System Events"
-            tell process "Messages"
-              keystroke "f" using command down
-              delay 0.15
-              keystroke "a" using command down
-              keystroke chatLookup
-              delay 0.25
-              key code 36
-              delay 0.35
-              keystroke "t" using command down
-              delay 0.2
-              keystroke customEmoji
-              delay 0.1
-              key code 36
-            end tell
-          end tell
-        end run
-        """
-      try appleScriptRunner(script, [chatGUID, chatLookup, reactionType.emoji])
-      return
+    case .custom(let emoji):
+      throw IMsgError.unsupportedReaction(
+        "custom emoji tapback '\(emoji)' cannot be sent by Messages.app "
+          + "AppleScript automation; use love, like, dislike, laugh, emphasis, or question."
+      )
     }
 
     let script = """
@@ -164,6 +142,8 @@ enum ReactCommand {
             keystroke "t" using command down
             delay 0.2
             keystroke reactionKey
+            delay 0.1
+            key code 36
           end tell
         end tell
       end run

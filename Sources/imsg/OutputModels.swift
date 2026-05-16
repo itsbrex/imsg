@@ -7,13 +7,33 @@ struct ChatPayload: Codable {
   let identifier: String
   let service: String
   let lastMessageAt: String
+  let guid: String?
+  let displayName: String?
+  let contactName: String?
+  let isGroup: Bool
+  let participants: [String]?
+  let accountID: String?
+  let accountLogin: String?
+  let lastAddressedHandle: String?
 
-  init(chat: Chat) {
+  init(
+    chat: Chat, chatInfo: ChatInfo? = nil, participants: [String]? = nil, contactName: String? = nil
+  ) {
+    let identifier = chatInfo?.identifier ?? chat.identifier
+    let guid = chatInfo?.guid ?? ""
     self.id = chat.id
     self.name = chat.name
-    self.identifier = chat.identifier
-    self.service = chat.service
+    self.identifier = identifier
+    self.service = chatInfo?.service ?? chat.service
     self.lastMessageAt = CLIISO8601.format(chat.lastMessageAt)
+    self.guid = guid.isEmpty ? nil : guid
+    self.displayName = chatInfo?.name
+    self.contactName = contactName
+    self.isGroup = isGroupHandle(identifier: identifier, guid: guid)
+    self.participants = participants
+    self.accountID = chatInfo?.accountID ?? chat.accountID
+    self.accountLogin = chatInfo?.accountLogin ?? chat.accountLogin
+    self.lastAddressedHandle = chatInfo?.lastAddressedHandle ?? chat.lastAddressedHandle
   }
 
   enum CodingKeys: String, CodingKey {
@@ -22,6 +42,14 @@ struct ChatPayload: Codable {
     case identifier
     case service
     case lastMessageAt = "last_message_at"
+    case guid
+    case displayName = "display_name"
+    case contactName = "contact_name"
+    case isGroup = "is_group"
+    case participants
+    case accountID = "account_id"
+    case accountLogin = "account_login"
+    case lastAddressedHandle = "last_addressed_handle"
   }
 }
 
@@ -31,7 +59,14 @@ struct MessagePayload: Codable {
   let guid: String
   let replyToGUID: String?
   let threadOriginatorGUID: String?
+  /// Text of the message this one replies to, when the inbound message is a
+  /// Threader reply or a non-reaction association and the parent row is
+  /// resolvable in chat.db.
+  let replyToText: String?
+  /// Sender handle of the parent message resolved alongside `replyToText`.
+  let replyToSender: String?
   let sender: String
+  let senderName: String?
   let isFromMe: Bool
   let text: String
   let createdAt: String
@@ -49,18 +84,29 @@ struct MessagePayload: Codable {
   let isReactionAdd: Bool?
   let reactedToGUID: String?
 
-  init(message: Message, attachments: [AttachmentMeta], reactions: [Reaction] = []) {
+  init(
+    message: Message,
+    attachments: [AttachmentMeta],
+    reactions: [Reaction] = [],
+    senderName: String? = nil,
+    reactionSenderNames: [Int64: String] = [:]
+  ) {
     self.id = message.rowID
     self.chatID = message.chatID
     self.guid = message.guid
     self.replyToGUID = message.replyToGUID
     self.threadOriginatorGUID = message.threadOriginatorGUID
+    self.replyToText = message.replyToText
+    self.replyToSender = message.replyToSender
     self.sender = message.sender
+    self.senderName = senderName
     self.isFromMe = message.isFromMe
     self.text = message.text
     self.createdAt = CLIISO8601.format(message.date)
     self.attachments = attachments.map { AttachmentPayload(meta: $0) }
-    self.reactions = reactions.map { ReactionPayload(reaction: $0) }
+    self.reactions = reactions.map {
+      ReactionPayload(reaction: $0, senderName: reactionSenderNames[$0.rowID])
+    }
     self.destinationCallerID = message.destinationCallerID
 
     // Reaction event metadata
@@ -85,7 +131,10 @@ struct MessagePayload: Codable {
     case guid
     case replyToGUID = "reply_to_guid"
     case threadOriginatorGUID = "thread_originator_guid"
+    case replyToText = "reply_to_text"
+    case replyToSender = "reply_to_sender"
     case sender
+    case senderName = "sender_name"
     case isFromMe = "is_from_me"
     case text
     case createdAt = "created_at"
@@ -117,14 +166,16 @@ struct ReactionPayload: Codable {
   let type: String
   let emoji: String
   let sender: String
+  let senderName: String?
   let isFromMe: Bool
   let createdAt: String
 
-  init(reaction: Reaction) {
+  init(reaction: Reaction, senderName: String? = nil) {
     self.id = reaction.rowID
     self.type = reaction.reactionType.name
     self.emoji = reaction.reactionType.emoji
     self.sender = reaction.sender
+    self.senderName = senderName
     self.isFromMe = reaction.isFromMe
     self.createdAt = CLIISO8601.format(reaction.date)
   }
@@ -134,8 +185,48 @@ struct ReactionPayload: Codable {
     case type
     case emoji
     case sender
+    case senderName = "sender_name"
     case isFromMe = "is_from_me"
     case createdAt = "created_at"
+  }
+}
+
+struct GroupPayload: Codable {
+  let id: Int64
+  let identifier: String
+  let guid: String
+  let name: String
+  let service: String
+  let isGroup: Bool
+  let participants: [String]
+  let accountID: String?
+  let accountLogin: String?
+  let lastAddressedHandle: String?
+
+  init(chatInfo: ChatInfo, participants: [String]) {
+    self.id = chatInfo.id
+    self.identifier = chatInfo.identifier
+    self.guid = chatInfo.guid
+    self.name = chatInfo.name
+    self.service = chatInfo.service
+    self.isGroup = isGroupHandle(identifier: chatInfo.identifier, guid: chatInfo.guid)
+    self.participants = participants
+    self.accountID = chatInfo.accountID
+    self.accountLogin = chatInfo.accountLogin
+    self.lastAddressedHandle = chatInfo.lastAddressedHandle
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case identifier
+    case guid
+    case name
+    case service
+    case isGroup = "is_group"
+    case participants
+    case accountID = "account_id"
+    case accountLogin = "account_login"
+    case lastAddressedHandle = "last_addressed_handle"
   }
 }
 
@@ -147,6 +238,8 @@ struct AttachmentPayload: Codable {
   let totalBytes: Int64
   let isSticker: Bool
   let originalPath: String
+  let convertedPath: String?
+  let convertedMimeType: String?
   let missing: Bool
 
   init(meta: AttachmentMeta) {
@@ -157,6 +250,8 @@ struct AttachmentPayload: Codable {
     self.totalBytes = meta.totalBytes
     self.isSticker = meta.isSticker
     self.originalPath = meta.originalPath
+    self.convertedPath = meta.convertedPath
+    self.convertedMimeType = meta.convertedMimeType
     self.missing = meta.missing
   }
 
@@ -168,6 +263,8 @@ struct AttachmentPayload: Codable {
     case totalBytes = "total_bytes"
     case isSticker = "is_sticker"
     case originalPath = "original_path"
+    case convertedPath = "converted_path"
+    case convertedMimeType = "converted_mime_type"
     case missing = "missing"
   }
 }

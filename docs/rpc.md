@@ -1,116 +1,193 @@
-# RPC
+---
+title: JSON-RPC
+description: "Long-running JSON-RPC 2.0 over stdio for chats, history, watch, and send — same surfaces as the CLI, one process."
+---
 
-Goal: signal-style JSON-RPC without a daemon. Clawdis spawns `imsg rpc` and talks over stdio.
+`imsg rpc` exposes the read and send surfaces over JSON-RPC 2.0 on stdin/stdout. It's designed for agents and gateways that want a single long-lived process for chats, history, send, and watch — without a TCP port, daemon, or system service.
 
 ## Transport
-- stdin/stdout, one JSON object per line.
-- JSON-RPC 2.0 framing (`jsonrpc`, `id`, `method`, `params`).
+
+- One JSON object per line on stdin (request) and stdout (response/notification).
+- JSON-RPC 2.0 framing: `jsonrpc`, `id`, `method`, `params`.
 - Notifications omit `id`.
+- Stderr is reserved for human-readable diagnostics.
+- Startup failures such as missing Full Disk Access are returned as JSON-RPC
+  errors on the first request instead of human-readable stdout banners.
 
 ## Lifecycle
-- Gateway spawns one `imsg rpc` process.
-- Process stays alive for watch + send.
-- No TCP port, no daemon install.
+
+- The host process spawns one `imsg rpc` child.
+- The child stays alive across many requests and one-or-more watch subscriptions.
+- No TCP port. No launch agent. No `imsg` daemon to install.
+
+The pattern intentionally mirrors language servers and the way `imsg`'s parent gateway (Clawdis) supervises subprocesses — a single signal-style child that exits cleanly when stdin closes.
 
 ## Methods
 
 ### `chats.list`
+
 Params:
+
 - `limit` (int, default 20)
+
 Result:
-- `{ "chats": [Chat] }`
+
+```json
+{ "chats": [Chat] }
+```
 
 ### `messages.history`
+
 Params:
-- `chat_id` (int, required, preferred identifier)
+
+- `chat_id` (int, required) — preferred identifier.
 - `limit` (int, default 50)
-- `participants` (array, optional)
-- `start` / `end` (ISO8601, optional)
-- `attachments` (bool, default false)
+- `participants` (array of handle strings, optional)
+- `start` / `end` (ISO 8601, optional)
+- `attachments` (bool, default `false`)
+
 Result:
-- `{ "messages": [Message] }`
+
+```json
+{ "messages": [Message] }
+```
 
 ### `watch.subscribe`
+
 Params:
-- `chat_id` (int, optional)
-- `since_rowid` (int, optional)
+
+- `chat_id` (int, optional) — omit for all-chat stream.
+- `since_rowid` (int, optional) — exclusive cursor.
 - `participants` (array, optional)
-- `start` / `end` (ISO8601, optional)
-- `attachments` (bool, default false)
+- `start` / `end` (ISO 8601, optional)
+- `attachments` (bool, default `false`)
+- `include_reactions` (bool, default `false`)
+- `debounce_ms` (int, default `500`)
+
 Result:
-- `{ "subscription": 1 }`
-Notifications:
-- `{"jsonrpc":"2.0","method":"message","params":{"subscription":1,"message":<Message>}}`
+
+```json
+{ "subscription": 1 }
+```
+
+Notifications (one per emitted message):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "message",
+  "params": {
+    "subscription": 1,
+    "message": { ... }
+  }
+}
+```
+
+The RPC default debounce (`500ms`) is intentionally higher than the CLI default (`250ms`). RPC's typical caller is an agent that just sent a message and is waiting for the inbound echo to settle (`is_from_me` correction, attachment metadata, …). 500ms is enough for those follow-ups to land before the message is emitted.
+
+Like the CLI watch, RPC watch backs filesystem events with a low-frequency poll so a missed event or a rotated SQLite sidecar doesn't leave the subscription silent.
 
 ### `watch.unsubscribe`
+
 Params:
+
 - `subscription` (int, required)
+
 Result:
-- `{ "ok": true }`
+
+```json
+{ "ok": true }
+```
 
 ### `send`
-Params (direct):
+
+Params (direct send):
+
 - `to` (string, required)
 - `text` (string, optional)
 - `file` (string, optional)
-- `service` ("imessage"|"sms"|"auto", optional)
+- `service` (`imessage` | `sms` | `auto`, optional)
 - `region` (string, optional)
 
-Params (group):
-- `chat_id` or `chat_identifier` or `chat_guid` (one required; `chat_id` preferred)
-- `text` / `file` as above
+Params (chat target):
+
+- `chat_id` *or* `chat_identifier` *or* `chat_guid` — exactly one. `chat_id` is preferred.
+- `text` / `file` as above.
 
 Result:
-- `{ "ok": true }`
+
+```json
+{ "ok": true, "id": 1979, "guid": "8DF..." }
+```
+
+`id` and `guid` are best-effort. `send` returns them when the inserted row can be observed in `chat.db` after Messages accepts the send. Attachment-only sends, delayed database writes, or ambiguous direct sends may return only `{"ok": true}`.
+
+For chat-target sends, `send` also performs the [Tahoe ghost-row check](send.md#tahoe-ghost-row-protection): if Messages writes an empty unjoined SMS row instead of delivering, the call returns an error rather than `{"ok": true}`.
+
+### Bridge Message Actions
+
+These methods require the IMCore bridge and target an existing chat with `chat_id`, `chat_identifier`, or `chat_guid`.
+
+- `send.rich` sends text with optional `effect`, `subject`, `reply_to`, `part_index`, `dd_scan`, and `text_formatting`.
+- `send.attachment` sends `file` or `path`, with optional `audio` / `is_audio` / `as_voice`.
+- `tapback` sends or removes a reaction. Params: `message_id` or `message_guid`, plus `reaction` / `kind` / `emoji`, optional `remove`.
+- `message.edit` edits `message_id` / `message_guid` with `text`.
+- `message.unsend`, `message.delete`, and `message.notifyAnyways` target `message_id` / `message_guid`.
+
+Result:
+
+```json
+{ "ok": true }
+```
+
+`send.rich` and `send.attachment` return `guid` / `message_id` when the bridge reports the sent message GUID.
 
 ## Objects
 
 ### Chat
-- `id` (int)
-- `name` (string)
-- `identifier` (string)
-- `guid` (string, optional)
-- `service` (string)
-- `last_message_at` (ISO8601)
-- `participants` (array, optional)
-- `is_group` (bool, optional)
+
+See [JSON output → Chat](json.md#chat). Every field documented there appears in the RPC `chats.list` response.
 
 ### Message
-- `id` (rowid)
-- `chat_id` (always present; preferred handle for routing)
-- `guid` (string)
-- `reply_to_guid` (string, optional)
-- `destination_caller_id` (string, optional)
-- `sender`
-- `is_from_me`
-- `text`
-- `created_at`
-- `attachments` (array)
-- `reactions` (array)
-- `chat_identifier`
-- `chat_guid`
-- `chat_name`
-- `participants`
-- `is_group`
+
+See [JSON output → Message](json.md#message). When `include_reactions: true`, message notifications also include the reaction extension fields (`is_reaction`, `reaction_type`, `reaction_emoji`, `is_reaction_add`, `reacted_to_guid`).
+
+`account_id`, `account_login`, `last_addressed_handle`, and outgoing `destination_caller_id` are read-only routing diagnostics; the AppleScript send API does not expose a `from` selector.
 
 ## Examples
 
-Request:
-```
+Request `chats.list`:
+
+```json
 {"jsonrpc":"2.0","id":"1","method":"chats.list","params":{"limit":10}}
 ```
 
 Response:
-```
+
+```json
 {"jsonrpc":"2.0","id":"1","result":{"chats":[...]}}
 ```
 
-Subscribe:
-```
+Subscribe to a chat:
+
+```json
 {"jsonrpc":"2.0","id":"2","method":"watch.subscribe","params":{"chat_id":1}}
 ```
 
-Notification:
-```
+Notification on each new message:
+
+```json
 {"jsonrpc":"2.0","method":"message","params":{"subscription":2,"message":{...}}}
 ```
+
+Send and receive verification:
+
+```json
+{"jsonrpc":"2.0","id":"3","method":"send","params":{"to":"+14155551212","text":"hi"}}
+{"jsonrpc":"2.0","id":"3","result":{"ok":true,"transport":"applescript","id":1979,"guid":"8DF..."}}
+```
+
+`send` accepts `transport: "auto" | "bridge" | "applescript"`. `auto`
+uses the IMCore bridge for existing chats when it is running, then falls back
+to AppleScript. Use `bridge` when the caller requires private-API delivery and
+should fail instead of falling back.
