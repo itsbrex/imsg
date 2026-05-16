@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: Wave 3 complete; Wave 4a queued)
+## Status snapshot (last updated: W4.X complete; W4.W + W4.E queued)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -13,7 +13,7 @@
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
 | 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
-| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
+| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 🚧 W4.X shipped; W4.W / W4.E pending | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
@@ -92,13 +92,14 @@ Each agent owns a disjoint directory and a fillable command stub.
 - Tests: `Tests/IMsgCoreTests/FTS5IndexTests.swift` (fixture chat.db → assert recall), `Tests/imsgTests/SearchCommandTests.swift`.
 - **Note:** also add a `tools/call imsg.search` handler in `Sources/imsg/MCP/MCPHandlers.swift` that currently returns `-32601`; remove that stub now that the feature exists.
 
-### W4.X — Export bundles
-- `Sources/IMsgCore/Export/BundleManifest.swift` — schema-v1 manifest struct + sha256 hashing.
-- `Sources/IMsgCore/Export/BundleWriter.swift` — deterministic output: messages ordered by `(created_at, rowid)`, attachments by lex filename, sorted JSON keys, `\n` line endings.
-- `Sources/IMsgCore/Export/BundleVerifier.swift` — recompute hashes, return drift report.
-- `Sources/IMsgCore/Export/BundleDiffer.swift` — structural diff (adds/removes/edits).
-- Fill `Sources/imsg/Commands/ExportCommand.swift` — `export|verify|diff` subcommands via `--action`.
-- Tests: golden-file round-trip in `Tests/IMsgCoreTests/BundleRoundtripTests.swift`.
+### W4.X — Export bundles ✅ (MVP)
+- `Sources/IMsgCore/Export/BundleManifest.swift` — `BundleManifest` / `BundleSource` / `BundleCounts` (snake_case JSON via `CodingKeys`) + `BundleHasher` (sha256-hex of bytes).
+- `Sources/IMsgCore/Export/BundleWriter.swift` — pure-data writer that takes a fetched `ExportSource` (so it's testable without `MessageStore`). Deterministic output: messages sorted by `(created_at, rowid)`, reactions by `(created_at, rowid)`, attachments by lex filename, JSON keys sorted at every depth via `JSONSerialization` `.sortedKeys`, JSONL files terminated with `\n` and `manifest.json` / `meta.json` pretty-printed with trailing newline. ISO-8601 UTC timestamps with second precision (`.SSS` only when the source has sub-second resolution). Refuses non-empty output directories.
+- `Sources/IMsgCore/Export/BundleVerifier.swift` — re-hashes every file listed in `manifest.hashes`, compares counts, reports `mismatchedHashes` / `missingFiles` / `unexpectedFiles` / `countDeltas` via `BundleDriftReport`.
+- `Sources/IMsgCore/Export/BundleDiffer.swift` — keys messages by `id.guid`, reports `addedMessages` / `removedMessages` / `editedMessages` (text + attachment-set delta) and a coarse symmetric reaction delta keyed by `(target, action, sender, type)`.
+- `Sources/imsg/Commands/ExportCommand.swift` now does work: `--action=export|verify|diff` (default `export`), `--chat-id` / `--out` for export, `--in` for verify, `--in` + `--other` for diff. JSON output via `--json`. Verify / diff exit non-zero on drift.
+- `Tests/IMsgCoreTests/BundleRoundtripTests.swift` covers layout, deterministic byte-for-byte equality across two runs, message ordering, verifier clean / hash mismatch / missing file / unexpected file, differ identical / added / removed / edited.
+- Deferred (per project "Out of scope" list): attachment-bytes copy + per-attachment sha256, `--redact-handles` + side-car redaction map, `--all`, `--since`/`--until`, `--shard-by`, `--tar-zst`, Ed25519 `--sign-with`, and `imsg import`. The MVP is "metadata-only mode" from `docs/export.md`; the bundle is reproducible and verifiable without ever copying attachment payloads.
 
 ### W4.W — Contacts (`who`) and interaction graph (`graph`)
 - Depends on W3.C (`ContactsBridge`).
