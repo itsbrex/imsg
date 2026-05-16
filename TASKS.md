@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: W3.M complete)
+## Status snapshot (last updated: W3.M + W3.T complete)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -12,7 +12,7 @@
 | 2b   | `imsg mcp` stdio Model Context Protocol server | ✅ shipped | `1e677ac` |
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
-| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 🚧 W3.M shipped; W3.T / W3.H / W3.C pending — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
+| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 🚧 W3.M + W3.T shipped; W3.H / W3.C pending — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
 | 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
@@ -49,11 +49,12 @@ Unblocks: W4.V (serve), W4.R (rules), W4.E (enrichment).
 - The public `stream(chatID:sinceRowID:configuration:) -> AsyncThrowingStream<Message, Error>` API is preserved (now `nonisolated`); `WatchCommand`, `RPCServer+Handlers`, and `MCPHandlers` compile unchanged.
 - New: `Tests/IMsgCoreTests/MessageWatcherFanoutTests.swift` covers (a) two subscribers each see every row exactly once, (b) cancellation of one consumer leaves the other running, (c) per-subscriber chat filters are independent.
 
-### W3.T — Hand-rolled TOML subset
+### W3.T — Hand-rolled TOML subset ✅
 Unblocks: W4.R (rules).
-- New `Sources/IMsgCore/Config/TOML.swift` — parse `[[rule]]` array-of-tables, scalars (string / int / bool / float / array), triple-quoted strings, `#` comments. Reject unknown keys.
-- No new Swift Package dependency. Document the supported subset in the file's leading comment.
-- Files: `Sources/IMsgCore/Config/TOML.swift`, `Tests/IMsgCoreTests/TOMLTests.swift`.
+- `Sources/IMsgCore/Config/TOML.swift` parses the documented subset: `[table]` / `[[array-of-tables]]` headers (with dotted segments), bare + quoted keys, basic strings with the standard escapes (including `\uXXXX`), triple-quoted basic strings (leading-newline trim), signed integers + floats with `_` separators, booleans, arrays (multi-line, trailing comma), inline tables, and `#` comments. The supported grammar is documented in the file's leading comment block.
+- No new Swift Package dependency. Output is a `TOMLValue` tree with typed accessors; "unknown key" enforcement is the caller's responsibility (the rules schema validator owns that).
+- Errors carry line + column. Duplicate top-level keys, duplicate table headers, unterminated strings, invalid escapes, and newlines inside single-line strings are rejected.
+- `Tests/IMsgCoreTests/TOMLTests.swift` covers scalars, escapes, triple-quoted strings, arrays, inline tables, `[[rule]]` arrays-of-tables, a realistic rules.toml fixture, and the negative cases above.
 
 ### W3.H — URLSession HTTP helper
 Unblocks: W4.C (compose), W4.R webhook action, W4.E unfurl.
