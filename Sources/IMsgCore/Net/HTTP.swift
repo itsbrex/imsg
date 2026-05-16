@@ -28,50 +28,36 @@ public protocol HTTPTransport: Sendable {
   func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
 
-public struct URLSessionTransport: HTTPTransport, @unchecked Sendable {
-  public let session: URLSession
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+  public struct URLSessionTransport: HTTPTransport, @unchecked Sendable {
+    public let session: URLSession
 
-  public init(session: URLSession = .shared) {
-    self.session = session
-  }
+    public init(session: URLSession = .shared) {
+      self.session = session
+    }
 
-  public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+    public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
       let (data, response) = try await session.data(for: request)
       guard let http = response as? HTTPURLResponse else {
         throw HTTPError.missingResponse
       }
       return (data, http)
-    #else
-      // The Linux build of this module exists only so the `imsg` CLI
-      // compiles — the network-using code paths (rules webhook, unfurl
-      // enrichment, compose) are gated by feature wiring that the
-      // Linux test target does not exercise. Avoid relying on
-      // `URLSession.data(for:)`'s async surface here, which has
-      // varied across swift-corelibs-foundation releases.
-      return try await sendViaDelegate(request)
-    #endif
-  }
-
-  #if !(os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
-    private func sendViaDelegate(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-      try await withCheckedThrowingContinuation { continuation in
-        let task = session.dataTask(with: request) { data, response, error in
-          if let error {
-            continuation.resume(throwing: error)
-            return
-          }
-          guard let http = response as? HTTPURLResponse else {
-            continuation.resume(throwing: HTTPError.missingResponse)
-            return
-          }
-          continuation.resume(returning: (data ?? Data(), http))
-        }
-        task.resume()
-      }
     }
-  #endif
-}
+  }
+#else
+  /// Stub on non-Apple platforms. The Linux build of `IMsgCore` exists
+  /// so the `imsg` CLI compiles; the network-using callers (rules
+  /// webhook, unfurl enrichment, compose) are not wired into the Linux
+  /// test surface. Calling `send` returns a `transport` error so misuse
+  /// is loud rather than silent.
+  public struct URLSessionTransport: HTTPTransport {
+    public init() {}
+    public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+      _ = request
+      throw HTTPError.transport("URLSessionTransport is not available on this platform")
+    }
+  }
+#endif
 
 public struct RetryPolicy: Sendable, Equatable {
   public var maxAttempts: Int
