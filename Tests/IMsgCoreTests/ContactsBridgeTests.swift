@@ -59,7 +59,7 @@ func cacheServesRepeatedLookupsFromMemory() async throws {
   let second = try await cache.find(handle: "+15550000001")
   #expect(first?.name == "Cached")
   #expect(second?.name == "Cached")
-  #expect(upstream.lookupCount == 1)
+  #expect(await upstream.lookupCount == 1)
 }
 
 @Test
@@ -88,11 +88,11 @@ func cacheRespectsTTL() async throws {
   )
 
   _ = try await cache.find(handle: "+15550000002")
-  #expect(upstream.lookupCount == 1)
+  #expect(await upstream.lookupCount == 1)
 
   clock.advance(by: 120)
   _ = try await cache.find(handle: "+15550000002")
-  #expect(upstream.lookupCount == 2)
+  #expect(await upstream.lookupCount == 2)
 }
 
 @Test
@@ -104,7 +104,7 @@ func cacheNegativeHitsAreAlsoCached() async throws {
   #expect(first == nil)
   #expect(second == nil)
   // Cache should remember the miss so we do not re-query upstream.
-  #expect(upstream.lookupCount == 1)
+  #expect(await upstream.lookupCount == 1)
 }
 
 @Test
@@ -115,7 +115,7 @@ func cacheInvalidationForcesRefresh() async throws {
   let cache = ContactsCache(upstream: upstream, ttl: 3600)
 
   _ = try await cache.find(handle: "+15550000004")
-  upstream.set(Contact(name: "Post", handle: "+15550000004"), for: "+15550000004")
+  await upstream.set(Contact(name: "Post", handle: "+15550000004"), for: "+15550000004")
   // Without invalidation we still see the stale value.
   let stale = try await cache.find(handle: "+15550000004")
   #expect(stale?.name == "Pre")

@@ -37,24 +37,19 @@ public struct NoOpContactsBridge: ContactsBridge {
 
 // MARK: - In-memory bridge for tests
 
-public final class InMemoryContactsBridge: ContactsBridge, @unchecked Sendable {
-  private let lock = NSLock()
+public actor InMemoryContactsBridge: ContactsBridge {
   private var records: [String: Contact]
-  private(set) var lookupCount: Int = 0
+  public private(set) var lookupCount: Int = 0
 
   public init(records: [String: Contact] = [:]) {
     self.records = records
   }
 
   public func set(_ record: Contact, for handle: String) {
-    lock.lock()
-    defer { lock.unlock() }
     records[handle] = record
   }
 
   public func find(handle: String) async throws -> Contact? {
-    lock.lock()
-    defer { lock.unlock() }
     lookupCount += 1
     return records[handle]
   }

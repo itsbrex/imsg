@@ -224,7 +224,9 @@ public actor MessageWatcher {
 /// queue state directly.
 private final class FileObserver: @unchecked Sendable {
   private let queue = DispatchQueue(label: "imsg.watch.fileobserver", qos: .userInitiated)
-  private var sources: [DispatchSourceFileSystemObject] = []
+  #if os(macOS)
+    private var sources: [DispatchSourceFileSystemObject] = []
+  #endif
 
   init(paths: [String], onChange: @escaping @Sendable () -> Void) {
     #if os(macOS)
@@ -243,15 +245,20 @@ private final class FileObserver: @unchecked Sendable {
           sources.append(source)
         }
       }
+    #else
+      _ = paths
+      _ = onChange
     #endif
   }
 
   func cancel() {
-    queue.sync {
-      for source in sources {
-        source.cancel()
+    #if os(macOS)
+      queue.sync {
+        for source in sources {
+          source.cancel()
+        }
+        sources.removeAll()
       }
-      sources.removeAll()
-    }
+    #endif
   }
 }

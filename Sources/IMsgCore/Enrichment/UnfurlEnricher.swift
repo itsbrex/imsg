@@ -53,20 +53,41 @@ public struct UnfurlEnricher: Enricher {
   }
 
   static func extractHTTPSURLs(from text: String) -> [URL] {
-    guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-    else { return [] }
-    let matches = detector.matches(
-      in: text, options: [], range: NSRange(text.startIndex..., in: text))
-    var seen: Set<String> = []
-    var urls: [URL] = []
-    for match in matches {
-      guard let url = match.url else { continue }
-      guard url.scheme?.lowercased() == "https" else { continue }
-      let key = url.absoluteString
-      if !seen.insert(key).inserted { continue }
-      urls.append(url)
-    }
-    return urls
+    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+      guard
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+      else { return [] }
+      let matches = detector.matches(
+        in: text, options: [], range: NSRange(text.startIndex..., in: text))
+      var seen: Set<String> = []
+      var urls: [URL] = []
+      for match in matches {
+        guard let url = match.url else { continue }
+        guard url.scheme?.lowercased() == "https" else { continue }
+        let key = url.absoluteString
+        if !seen.insert(key).inserted { continue }
+        urls.append(url)
+      }
+      return urls
+    #else
+      // `NSDataDetector` is unavailable on swift-corelibs-foundation.
+      // Fall back to a simple regex; this code path exists only so the
+      // Linux build of `IMsgCore` compiles, and unfurl is not wired
+      // into any Linux command surface.
+      guard let regex = try? NSRegularExpression(pattern: #"https://[^\s]+"#) else { return [] }
+      let nsRange = NSRange(text.startIndex..., in: text)
+      var seen: Set<String> = []
+      var urls: [URL] = []
+      for match in regex.matches(in: text, options: [], range: nsRange) {
+        guard let range = Range(match.range, in: text) else { continue }
+        let candidate = String(text[range])
+        guard let url = URL(string: candidate) else { continue }
+        let key = url.absoluteString
+        if !seen.insert(key).inserted { continue }
+        urls.append(url)
+      }
+      return urls
+    #endif
   }
 }
 
