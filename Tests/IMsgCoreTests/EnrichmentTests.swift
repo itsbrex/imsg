@@ -39,19 +39,30 @@ func chainMergesResultsInOrder() async throws {
 
 @Test
 func chainSkipsFailingEnrichers() async throws {
+  final class Captured: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func append(_ name: String) {
+      lock.lock(); defer { lock.unlock() }
+      values.append(name)
+    }
+    func snapshot() -> [String] {
+      lock.lock(); defer { lock.unlock() }
+      return values
+    }
+  }
+
   let chain = EnrichmentChain([
     StubEnricher(name: "a", fields: [EnrichmentField(key: "x", value: .string("1"))]),
     ThrowingEnricher(name: "b"),
     StubEnricher(name: "c", fields: [EnrichmentField(key: "z", value: .string("3"))]),
   ])
-  var captured: [String] = []
-  let lock = NSLock()
+  let captured = Captured()
   let result = await chain.run(EnrichmentContext(message: sampleMessage)) { name, _ in
-    lock.lock(); defer { lock.unlock() }
     captured.append(name)
   }
   #expect(result.fields.map(\.key) == ["x", "z"])
-  #expect(captured == ["b"])
+  #expect(captured.snapshot() == ["b"])
 }
 
 // MARK: - Unfurl + HTML scraper
