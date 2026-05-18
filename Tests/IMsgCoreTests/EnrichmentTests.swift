@@ -117,11 +117,7 @@ private final class FakeUnfurlTransport: HTTPTransport, @unchecked Sendable {
   init(_ map: [URL: Step]) { self.responses = map }
 
   func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    lock.lock(); defer { lock.unlock() }
-    let url = request.url!
-    guard let step = responses[url] else {
-      throw NSError(domain: "FakeUnfurl", code: 404)
-    }
+    let (url, step) = try responseStep(for: request)
     switch step {
     case .ok(let data):
       let response = HTTPURLResponse(
@@ -132,6 +128,15 @@ private final class FakeUnfurlTransport: HTTPTransport, @unchecked Sendable {
     case .fail(let error):
       throw error
     }
+  }
+
+  private func responseStep(for request: URLRequest) throws -> (URL, Step) {
+    lock.lock(); defer { lock.unlock() }
+    let url = request.url!
+    guard let step = responses[url] else {
+      throw NSError(domain: "FakeUnfurl", code: 404)
+    }
+    return (url, step)
   }
 }
 

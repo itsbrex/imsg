@@ -45,7 +45,7 @@ public struct GraphBuilder {
       let displayName: String
       let handle: String?
       if message.isFromMe {
-        contactId = "me"
+        contactId = "Me"
         displayName = "Me"
         handle = nil
       } else if message.sender.isEmpty {

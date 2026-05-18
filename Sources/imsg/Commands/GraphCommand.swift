@@ -45,7 +45,9 @@ enum GraphCommand {
     let now = clock()
     let since = try parseWindowEdge(values.option("since"), relativeTo: now)
     let until = try values.option("until").flatMap { iso -> Date? in
-      guard let d = CLIISO8601.parse($0) else { throw ParsedValuesError.invalidOption("until") }
+      guard let d = CLIISO8601.parse(iso) else {
+        throw ParsedValuesError.invalidOption("until")
+      }
       return d
     }
     let window = GraphWindow(since: since, until: until)

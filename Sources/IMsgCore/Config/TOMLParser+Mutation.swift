@@ -118,9 +118,10 @@ extension TOMLParser {
   mutating func insertIntoTable(
     in root: inout [String: TOMLValue], path: [String], key: String, value: TOMLValue
   ) throws {
+    let duplicateKeyError = error("duplicate key \"\(key)\"")
     try mutateTable(in: &root, path: path) { table in
       if table[key] != nil {
-        throw self.error("duplicate key \"\(key)\"")
+        throw duplicateKeyError
       }
       table[key] = value
     }
@@ -131,15 +132,18 @@ extension TOMLParser {
   ) throws {
     var path = path
     let last = path.removeLast()
+    let missingSlotError = error("array of tables \"\(last)\" missing slot")
+    let expectedTableError = error("expected table in array of tables \"\(last)\"")
+    let duplicateKeyError = error("duplicate key \"\(key)\"")
     try mutateTable(in: &root, path: path) { parent in
       guard case .array(var array) = parent[last], !array.isEmpty else {
-        throw self.error("array of tables \"\(last)\" missing slot")
+        throw missingSlotError
       }
       guard case .table(var table) = array.last! else {
-        throw self.error("expected table in array of tables \"\(last)\"")
+        throw expectedTableError
       }
       if table[key] != nil {
-        throw self.error("duplicate key \"\(key)\"")
+        throw duplicateKeyError
       }
       table[key] = value
       array[array.count - 1] = .table(table)

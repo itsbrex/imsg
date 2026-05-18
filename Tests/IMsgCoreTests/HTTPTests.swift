@@ -20,14 +20,7 @@ private final class MockTransport: HTTPTransport, @unchecked Sendable {
   }
 
   func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    lock.lock()
-    recordedRequests.append(request)
-    guard !steps.isEmpty else {
-      lock.unlock()
-      throw NSError(domain: "MockTransport", code: -1, userInfo: nil)
-    }
-    let next = steps.removeFirst()
-    lock.unlock()
+    let next = try nextStep(for: request)
 
     switch next {
     case .response(let status, let body, let headers):
@@ -41,6 +34,16 @@ private final class MockTransport: HTTPTransport, @unchecked Sendable {
     case .failure(let error):
       throw error
     }
+  }
+
+  private func nextStep(for request: URLRequest) throws -> Step {
+    lock.lock()
+    defer { lock.unlock() }
+    recordedRequests.append(request)
+    guard !steps.isEmpty else {
+      throw NSError(domain: "MockTransport", code: -1, userInfo: nil)
+    }
+    return steps.removeFirst()
   }
 }
 
