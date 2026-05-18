@@ -1,9 +1,14 @@
 # Export Bundles
 
 Goal: a portable, reproducible, diffable bundle that represents a single chat
-(or a set of chats) as plain files. Produced by `imsg export`; verified and
-compared by `imsg export verify` / `imsg export diff`; consumed (eventually) by
-`imsg import`. Bundles never embed `chat.db`.
+as plain files. Produced by `imsg export`; verified and compared by
+`imsg export --action=verify` / `imsg export --action=diff`; consumed
+(eventually) by `imsg import`. Bundles never embed `chat.db`.
+
+Current 0.9.1 support is the metadata-only MVP: export one `--chat-id` to an
+empty directory, verify an existing bundle, or diff two bundles. Attachment-byte
+copying, redaction, sharding, archives, signatures, `--all`, date windows, and
+import remain design targets below.
 
 ## Design principles
 
@@ -25,8 +30,6 @@ compared by `imsg export verify` / `imsg export diff`; consumed (eventually) by
 <bundle>/
   manifest.json          # schema, version, counts, hashes, source_guid
   messages.jsonl         # one message per line, envelope-wrapped (schema v1)
-  attachments/
-    by-guid/<guid>/<filename>
   reactions.jsonl        # separate stream for tapbacks
   participants.json      # contact_id + handles (redaction-friendly)
   meta.json              # chat metadata
@@ -34,10 +37,9 @@ compared by `imsg export verify` / `imsg export diff`; consumed (eventually) by
 
 Notes:
 
-- `attachments/by-guid/<guid>/<filename>` preserves the Messages-assigned GUID
-  as the directory name and the user-visible filename inside. Collisions are
-  impossible because the GUID dir scopes them. Empty attachment set => the
-  `attachments/` directory is omitted.
+- The 0.9.1 MVP records attachment metadata in `messages.jsonl` but does not
+  copy attachment bytes into the bundle. A future attachment-copying mode will
+  add `attachments/by-guid/<guid>/<filename>`.
 - `reactions.jsonl` is split from `messages.jsonl` so that tapback churn does
   not change the hash of the main message stream.
 - `participants.json` is stable across exports of the same chat even when the
@@ -155,32 +157,18 @@ any platform; a compliant `verify` only needs sha256 to confirm.
 ## CLI
 
 ```
-imsg export --chat-id N --out <dir> [--since ISO] [--until ISO]
-            [--attachments] [--redact-handles]
-            [--shard-by month|rowid:<N>] [--tar-zst]
-            [--sign-with <key.pem>]
-imsg export --all --out <dir> [common flags]
-imsg export verify <dir-or-tar>
-imsg export diff <a> <b>
-imsg import --dry-run <dir>   # scaffold only in v1
+imsg export --chat-id N --out <dir>
+imsg export --action=verify --in <dir>
+imsg export --action=diff --in <a> --other <b>
 ```
 
-Flag semantics:
+Current flag semantics:
 
-- `--chat-id` is required unless `--all`. Accepts a single integer; use
-  repeated flags or `--all` for multiple chats.
+- `--chat-id` is required for export and accepts a single integer.
 - `--out` must point at an empty directory or a path that does not yet exist.
-  The command will refuse to overwrite a non-empty directory without
-  `--force`.
-- `--since` / `--until` filter by `message.created_at` (inclusive / exclusive).
-  They do not affect `participants.json` or `meta.json`.
-- `--attachments` copies attachment bytes into the bundle. Without it,
-  `attachments/` is omitted and per-message `attachments[].sha256` is still
-  populated (so the manifest remains auditable even in "metadata-only" mode).
-- `--redact-handles` enables redaction (see Privacy).
-- `--shard-by` is documented under Large bundles.
-- `--tar-zst` documented under Large bundles.
-- `--sign-with` documented under Signing.
+  The command refuses to overwrite a non-empty directory.
+- Date windows, attachment-byte copying, redaction, sharding, archives, and
+  signing are planned design targets rather than current flags.
 
 ### `verify`
 

@@ -23,6 +23,12 @@ imsg send --to "+14155551212" --text "on my way"
 
 # Send a file (image, audio, document).
 imsg send --to "Jane Appleseed" --file ~/Desktop/voice.m4a
+
+# Export a reproducible metadata bundle for one chat.
+imsg export --chat-id 42 --out ./chat-42.bundle
+
+# Visualize recent chat/contact activity.
+imsg graph --since 30d --dot > graph.dot
 ```
 
 `--json` emits newline-delimited JSON on stdout; human progress and warnings always go to stderr so pipes stay parseable.
@@ -44,6 +50,8 @@ imsg send --to "Jane Appleseed" --file ~/Desktop/voice.m4a
 - **Reading on Linux.** [Linux read-only preview](linux.md) covers copying an existing database from macOS and running read-only commands.
 - **Wiring up an agent.** [JSON output](json.md) and [JSON-RPC](rpc.md) cover the stable contracts; [completions](completions.md) shows how to feed the CLI reference into an LLM.
 - **Sending messages.** [Send](send.md) and [React](send.md#standard-tapbacks) explain text/file/group sends and how the Tahoe ghost-row check works.
+- **Archiving or comparing chats.** [Export bundles](export.md) covers deterministic metadata bundles, verification, and diffs.
+- **Mapping participants.** [Contacts & graph](contacts.md) covers `imsg who` and `imsg graph`.
 - **Diagnosing access.** [Permissions](permissions.md) and [Troubleshooting](troubleshooting.md).
 - **Advanced IMCore.** [Read receipts, typing, status, launch](advanced-imcore.md). SIP-disabled and increasingly limited on macOS 26.
 

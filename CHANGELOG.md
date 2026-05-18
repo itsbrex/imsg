@@ -2,6 +2,23 @@
 
 ## 0.9.1 - Unreleased
 
+### Export And Graph
+- feat: add `imsg export` metadata bundles with deterministic JSON/JSONL
+  output plus `--action=verify` and `--action=diff` for bundle integrity and
+  drift checks.
+- feat: add `imsg who` for Contacts-backed participant lookup and `imsg graph`
+  for local contact-to-chat interaction graphs in JSON or Graphviz DOT.
+
+### Foundation Libraries
+- feat: add a hand-rolled TOML parser, HTTPS-first HTTP helper, Contacts bridge
+  cache, watcher fanout support, and enrichment library primitives for unfurl,
+  audio transcript, and OCR follow-up wiring.
+
+### CI And Portability
+- fix: resolve Swift 6 exclusivity and async-isolation compile failures across
+  the new TOML, graph, HTTP, and enrichment test surfaces.
+- fix: preserve the Contacts usage string when regenerating version metadata.
+
 ## 0.9.0 - 2026-05-16
 
 ### JSON Output

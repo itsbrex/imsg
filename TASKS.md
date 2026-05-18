@@ -1,6 +1,6 @@
 # imsg — Top-10 Improvements: Execution Plan
 
-> **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
+> **Source of truth for the multi-wave implementation.** Update this file as waves land. Current state is merged to `main`.
 
 ## Status snapshot (last updated: Wave 4a complete; Wave 4b queued)
 
@@ -30,12 +30,12 @@ The 10 ideas, mapped to current status:
 | 2  | Search                                    | `imsg search`       | `docs/search.md`     | **superseded by upstream `imsg search`** (bridge-backed). Our W4.S FTS5 + embedding plan is descoped; if we want local-only indexing without the bridge, file it as a follow-up. |
 | 3  | Rules engine                              | `imsg rules`        | `docs/rules.md`      | stub — W4b (W4.R) |
 | 4  | Outbox                                    | `imsg outbox`       | `docs/outbox.md`     | ✅ shipped (W2c) |
-| 5  | Enrichment (OCR / unfurl / transcripts)   | flag on watch/etc.  | `docs/enrichment.md` | not started — W4a (W4.E) |
+| 5  | Enrichment (OCR / unfurl / transcripts)   | library             | `docs/enrichment.md` | ✅ library shipped; CLI wiring deferred |
 | 6  | Schema envelope                           | n/a (env var)       | `docs/SCHEMA.md`     | ✅ shipped (W2a) |
 | 7  | Long-lived socket server                  | `imsg serve`        | `docs/serve.md`      | stub — W4b (W4.V) |
-| 8  | Contacts + interaction graph              | `imsg who`/`graph`  | `docs/contacts.md`   | stubs — W4a (W4.W). Note: upstream now ships `imsg whois` (reachability check via bridge) and `Sources/IMsgCore/ContactResolver.swift` (display-name lookup). Our W4.W focus narrows to interaction-graph aggregation and `--dot` export; the basic resolver work upstream already covers. |
+| 8  | Contacts + interaction graph              | `imsg who`/`graph`  | `docs/contacts.md`   | ✅ MVP shipped (W4.W). Note: upstream also ships `imsg whois` for bridge reachability checks. |
 | 9  | Compose (LLM-drafted replies)             | `imsg compose`      | `docs/compose.md`    | stub — W4b (W4.C) |
-| 10 | Portable chat bundles                     | `imsg export`       | `docs/export.md`     | stub — W4a (W4.X) |
+| 10 | Portable chat bundles                     | `imsg export`       | `docs/export.md`     | ✅ MVP shipped (W4.X) |
 
 ---
 
@@ -104,7 +104,7 @@ Each agent owns a disjoint directory and a fillable command stub.
 ### W4.W — Contacts (`who`) and interaction graph (`graph`) ✅
 Depends on W3.C (`ContactsBridge`).
 - `Sources/IMsgCore/Graph/InteractionGraph.swift` — `GraphNode` / `GraphEdge` / `GraphWindow` / `InteractionGraph` value types.
-- `Sources/IMsgCore/Graph/GraphBuilder.swift` — takes a list of `Message` rows + a `chats: [Int64: ChatInfo]` map + an injected `ContactsBridge` and aggregates per-`(contact, chat)` edges with `count`, `inbound`, `outbound`, `lastAt`. Reactions are skipped; outbound (`is_from_me`) messages collapse under a synthetic `me` contact id. Edges are returned ordered by count desc (tiebreak contact asc, then chat asc) so the output is stable. Resolved contact display names become the `contact_id`; unresolved handles fall back to the raw handle. The fuller `sha256(...)` id-synthesis pipeline from `docs/contacts.md` is deferred — the simpler scheme is sufficient for the edge-aggregation use case and stays stable across runs because the inputs are stable.
+- `Sources/IMsgCore/Graph/GraphBuilder.swift` — takes a list of `Message` rows + a `chats: [Int64: ChatInfo]` map + an injected `ContactsBridge` and aggregates per-`(contact, chat)` edges with `count`, `inbound`, `outbound`, `lastAt`. Reactions are skipped; outbound (`is_from_me`) messages collapse under a synthetic `Me` contact id. Edges are returned ordered by count desc (tiebreak contact asc, then chat asc) so the output is stable. Resolved contact display names become the `contact_id`; unresolved handles fall back to the raw handle. The fuller `sha256(...)` id-synthesis pipeline from `docs/contacts.md` is deferred — the simpler scheme is sufficient for the edge-aggregation use case and stays stable across runs because the inputs are stable.
 - `Sources/IMsgCore/Graph/GraphExporter.swift` — schema-envelope JSON (`{schema:"v1",kind:"graph",data:{...}}`, sorted keys at every depth) and Graphviz DOT (`digraph imsg`, ellipses for contacts + boxes for chats, edge labels carry the count).
 - `Sources/imsg/Commands/WhoCommand.swift` — `--handle <h>` resolves a single handle via the bridge, `--chat-id <n>` lists all chat participants (each handle resolved against the same bridge). Default text output emits `<name> <<handle>>`; `--json` emits an object with `source: "contacts" | "fallback"`. `bridgeFactory` and `storeFactory` are injectable for testing.
 - `Sources/imsg/Commands/GraphCommand.swift` — `--chat-id` restricts to a single chat (default: all chats up to 1000), `--since` accepts ISO-8601 or relative `NNd` / `NNw`, `--until` accepts ISO-8601, `--limit` caps messages scanned (default 50k), `--dot` selects Graphviz output (default JSON).

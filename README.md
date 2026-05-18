@@ -94,6 +94,15 @@ imsg react --chat-id 42 --reaction like
 
 # Search local history.
 imsg search --query "pizza" --match contains
+
+# Resolve a participant through Contacts.
+imsg who --handle "+14155551212"
+
+# Export a portable metadata bundle for one chat.
+imsg export --chat-id 42 --out ./chat-42.bundle
+
+# Build a local interaction graph.
+imsg graph --since 30d --dot > graph.dot
 ```
 
 `--json` emits one JSON object per line. Pipe to `jq -s` to materialize an
@@ -110,6 +119,11 @@ Automation):
 - `imsg history --chat-id <id> [--limit 50] [--attachments] [--convert-attachments] [--participants <handles>] [--start <iso>] [--end <iso>] [--json]`
 - `imsg watch [--chat-id <id>] [--since-rowid <id>] [--debounce <duration>] [--attachments] [--convert-attachments] [--reactions] [--participants <handles>] [--start <iso>] [--end <iso>] [--json]`
 - `imsg search --query <text> [--match contains|exact] [--limit 50] [--json]`
+- `imsg who (--handle <phone-or-email> | --chat-id <id>) [--json]`
+- `imsg graph [--chat-id <id>] [--since <iso|NNd|NNw>] [--until <iso>] [--limit <n>] [--dot]`
+- `imsg export --chat-id <id> --out <dir> [--json]`
+- `imsg export --action=verify --in <dir> [--json]`
+- `imsg export --action=diff --in <dir> --other <dir> [--json]`
 - `imsg send (--to <handle-or-contact-name> | --chat-id <id> | --chat-identifier <id> | --chat-guid <guid>) [--text <text>] [--file <path>] [--service imessage|sms|auto] [--region US] [--json]`
 - `imsg react --chat-id <id> --reaction love|like|dislike|laugh|emphasis|question`
 - `imsg rpc`

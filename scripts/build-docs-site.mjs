@@ -73,6 +73,7 @@ for (const page of pages) {
 }
 
 fs.writeFileSync(path.join(outDir, "favicon.svg"), faviconSvg(), "utf8");
+copyStaticDocsAssets();
 fs.writeFileSync(path.join(outDir, ".nojekyll"), "", "utf8");
 if (cname) fs.writeFileSync(path.join(outDir, "CNAME"), cname, "utf8");
 validateLinks(outDir);
@@ -132,6 +133,15 @@ function docsInstallHint() {
   if (typeof installSnippet !== "undefined") return installSnippet;
   if (typeof brewInstall !== "undefined") return brewInstall;
   return "";
+}
+
+function copyStaticDocsAssets() {
+  const schemaDir = path.join(docsDir, "schema");
+  if (!fs.existsSync(schemaDir)) return;
+  fs.cpSync(schemaDir, path.join(outDir, "schema"), {
+    recursive: true,
+    filter: (source) => !source.endsWith(".md"),
+  });
 }
 
 function pageUrl(origin, outRel) {

@@ -1,10 +1,13 @@
 # Contacts & Graph
 
-Design for `imsg who` and `imsg graph`. Resolves raw handles
-(phone / email) to macOS Contacts entries, synthesizes a stable
-`contact_id`, and exposes a local interaction graph. This is Wave
-1 design work (W1.H1); the implementing protocol lands in W2.H1
-(`ContactsBridge.swift`) and the CLI in W3.H1.
+Design and implementation notes for `imsg who` and `imsg graph`. Resolves raw
+handles (phone / email) to macOS Contacts entries when permission is available
+and exposes a local interaction graph.
+
+Current 0.9.1 support is the MVP: `imsg who --handle`, `imsg who --chat-id`,
+and `imsg graph` with JSON or DOT output. The persistent SQLite Contacts cache,
+full `sha256(...)` contact-id pipeline, `--refresh`, `--redact`, `--top`, and
+extra graph metrics remain follow-up work.
 
 ## Goals
 
@@ -168,17 +171,13 @@ CREATE INDEX IF NOT EXISTS idx_cache_contact_id
 imsg who --handle +14155551212
 imsg who --handle ada@example.com --json
 imsg who --chat-id 42
-imsg who --handle +14155551212 --refresh
-imsg who --handle +14155551212 --redact
 ```
 
 - `--handle <h>`: resolve a single handle.
 - `--chat-id <n>`: list all participants of a chat with full
   contact records.
-- `--json` (default): emit the record(s) as JSON.
-- `--text`: emit `display_name <handle>` per line.
-- `--refresh`: force cache invalidation before resolving.
-- `--redact`: see Privacy below.
+- `--json`: emit the record(s) as JSON.
+- Plain text output is the default and emits `display_name <handle>` per line.
 
 Exit codes: `0` on success (including fallback), `2` on missing
 arg, `3` when Contacts access is denied *and* `--strict` was
@@ -187,7 +186,7 @@ passed.
 ### `imsg graph`
 
 ```
-imsg graph --since 2026-01-01 --limit 5000 --top 20
+imsg graph --since 2026-01-01 --limit 5000
 imsg graph --since 30d --dot > graph.dot
 imsg graph --chat-id 42 --json
 ```
@@ -195,8 +194,7 @@ imsg graph --chat-id 42 --json
 - Window: `--since` accepts ISO8601 or a relative `NNd` / `NNw`.
 - `--limit N`: cap the number of messages scanned (default
   50_000).
-- `--top K`: keep only the K busiest contacts in the output
-  (default: unlimited).
+- `--until` accepts ISO8601 and is exclusive.
 - `--dot`: emit Graphviz DOT; default is JSON.
 
 JSON shape:
