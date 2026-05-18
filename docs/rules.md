@@ -1,6 +1,9 @@
 # Rules Engine (`imsg rules`)
 
-Status: design (W1.E1). Implementation: W2.E1 (AST) + W3.E1 (runner).
+Status: W4.R MVP implemented. The shipped surface includes strict TOML
+validation, matching, durable dedupe/cooldown/cursor state, `--dry-run`, and
+`log` / `exec` / `webhook` / `reply` action runners. Hot reload and the richer
+daemon polish remain deferred.
 
 Goal: react to inbound iMessage events with a declarative rules file. Every incoming
 message from `imsg watch` (or a replayed rowid range) is matched against a list of
@@ -264,31 +267,30 @@ file, the runner keys off rule `name`; renaming a rule forgets its dedupe histor
 
 All commands go through the existing `CommandRouter`.
 
-- `imsg rules run --config <path> [--dry-run] [--chat-id N] [--since ROWID]`
+- `imsg rules --action run --config <path> [--dry-run] [--chat-id N] [--since ROWID]`
   - Opens the watch stream (internally: the same reader `imsg watch` uses).
   - Evaluates every message against the loaded config.
   - `--chat-id` filters the watch stream itself (cheaper than a rule-level filter).
   - `--since ROWID` starts from a specific message rowid; default uses the
     `cursor` table, or tail-from-now on first run.
+  - `--limit N` stops after N watched messages; this is mostly for smoke tests
+    and replay-like local checks.
   - `--dry-run` prints rendered actions and never touches the network, shell, or
     `MessageSender`.
-- `imsg rules validate --config <path>`
+- `imsg rules --action validate --config <path>`
   - Parse, typecheck, compile every regex, render every template against a synthetic
     message (`{{text}}="hello"`, etc.), probe that every `cmd[0]` is executable and
     every `url` is `https://`. Exits 0/1.
-- `imsg rules list [--config <path>]`
+- `imsg rules --action list [--config <path>]`
   - Prints a table: `name, action, enabled, match summary, last fire (from state DB)`.
   - No config flag → lists from the state DB only (useful for "what's been firing?").
-- `imsg rules tail [--follow]`
+- `imsg rules --action tail [--follow]`
   - Convenience wrapper for `tail -f ~/Library/Logs/imsg/rules.log`.
 
 ### Hot reload
 
-- `SIGHUP` re-reads the config. On parse failure, the old rules stay loaded and the
-  error is logged — the runner never degrades to "no rules" silently.
-- `SIGTERM` / `SIGINT` flush the cursor and exit cleanly.
-- Config mtime is sampled every 5 s as a convenience so users who don't know about
-  signals still get reload. Can be disabled with `--no-autoreload`.
+Deferred. The MVP loads the config once at `run` startup. Restart the command
+after editing rules. The state cursor and dedupe table keep restarts idempotent.
 
 ---
 
@@ -312,23 +314,14 @@ All commands go through the existing `CommandRouter`.
 
 ## Testing strategy
 
-- **Fixture stream.** A JSONL file of `MessagePayload` records, replayed into the
-  runner with a stub watch source. Deterministic timestamps.
-- **Fixture rules.** `Tests/imsgTests/Fixtures/rules/*.toml` covering: regex with
-  captures, time-windowed, dedupe, cooldown, disabled, unknown-key (negative case),
-  missing required field (negative case).
-- **Action log assertion.** Each action type is double-bound in tests:
-  - `exec` → swap `/usr/bin/env` for a script that echoes argv to a temp file; assert
-    contents.
-  - `webhook` → localhost HTTP recorder; assert method, headers, HMAC, body.
-  - `reply` → inject a mock `MessageSender`; assert `send(chatID:text:)` calls.
-  - `log` → read the log file and assert JSON lines.
-- **Replay idempotency.** Run the fixture stream twice; the second pass must produce
-  zero new actions because dedupe state persisted.
-- **SIGHUP.** Write config A, start runner, write config B, send SIGHUP, replay one
-  message; assert config B rules fired.
-- **`validate`.** Every fixture is run through `validate` as part of CI; the negative
-  fixtures must exit non-zero with a line/column in the error.
+- **Core rules.** `Tests/IMsgCoreTests/RulesTests.swift` covers strict TOML
+  parsing, unknown keys, required action fields, regex captures, template
+  rendering, SQLite dedupe/cooldown state, and dry-run persistence behavior.
+- **CLI.** `Tests/imsgTests/RulesCommandTests.swift` covers `--action validate`
+  and `--action list` JSON output.
+- Deferred test expansion: fixture stream replay, action-specific integration
+  doubles for `exec` / `webhook` / `reply`, and hot-reload behavior when that
+  feature lands.
 
 ---
 

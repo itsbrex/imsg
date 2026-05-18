@@ -106,6 +106,10 @@ imsg export --chat-id 42 --out ./chat-42.bundle
 
 # Build a local interaction graph.
 imsg graph --since 30d --dot > graph.dot
+
+# Validate and dry-run local automation rules.
+imsg rules --action validate --config ~/.config/imsg/rules.toml
+imsg rules --action run --config ~/.config/imsg/rules.toml --dry-run
 ```
 
 `--json` emits one JSON object per line. Pipe to `jq -s` to materialize an
@@ -129,6 +133,7 @@ Automation):
 - `imsg export --chat-id <id> --out <dir> [--json]`
 - `imsg export --action=verify --in <dir> [--json]`
 - `imsg export --action=diff --in <dir> --other <dir> [--json]`
+- `imsg rules --action validate|list|run|tail [--config <path>] [--state <path>] [--dry-run] [--chat-id <id>] [--since <rowid>] [--limit <n>] [--json]`
 - `imsg send (--to <handle-or-contact-name> | --chat-id <id> | --chat-identifier <id> | --chat-guid <guid>) [--text <text>] [--file <path>] [--service imessage|sms|auto] [--region US] [--json]`
 - `imsg react --chat-id <id> --reaction love|like|dislike|laugh|emphasis|question`
 - `imsg rpc`

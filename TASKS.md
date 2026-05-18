@@ -14,7 +14,7 @@
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
 | 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
 | 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | ✅ shipped (W4.X + W4.W + W4.E CLI/MCP wiring) | — |
-| 4b   | Features: rules, compose, serve | 📋 planned | — |
+| 4b   | Features: rules, compose, serve | 🚧 in progress (W4.R MVP shipped; W4.C/W4.V planned) | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
 
@@ -28,7 +28,7 @@ The 10 ideas, mapped to current status:
 |----|------|---------|-----------|--------|
 | 1  | MCP server                                | `imsg mcp`          | `docs/mcp.md`        | ✅ shipped (W2b) |
 | 2  | Search                                    | `imsg search`       | `docs/search.md`     | **superseded by upstream `imsg search`** (bridge-backed). Our W4.S FTS5 + embedding plan is descoped; if we want local-only indexing without the bridge, file it as a follow-up. |
-| 3  | Rules engine                              | `imsg rules`        | `docs/rules.md`      | stub — W4b (W4.R) |
+| 3  | Rules engine                              | `imsg rules`        | `docs/rules.md`      | ✅ MVP shipped (W4.R); hot reload/full daemon polish deferred |
 | 4  | Outbox                                    | `imsg outbox`       | `docs/outbox.md`     | ✅ shipped (W2c) |
 | 5  | Enrichment (OCR / unfurl / transcripts)   | `--enrich`          | `docs/enrichment.md` | ✅ shipped for CLI, JSON-RPC, and MCP read/watch surfaces |
 | 6  | Schema envelope                           | n/a (env var)       | `docs/SCHEMA.md`     | ✅ shipped (W2a) |
@@ -117,13 +117,14 @@ Depends on W3.C (`ContactsBridge`).
 
 Separate sub-wave so each gets a focused review.
 
-### W4.R — Rules engine
+### W4.R — Rules engine ✅ (MVP)
 - Depends on W3.M (fanout), W3.T (TOML), W3.H (HTTP).
-- `Sources/IMsgCore/Rules/{RuleModel,RuleLoader,RuleMatcher,RuleActions,RulesState}.swift`.
-- Actions: `exec` (argv, 30s timeout, env injected), `webhook` (HTTPS via W3.H, optional HMAC), `reply` (delegates to `MessageSender`; `--dry-run` aware), `log`.
-- Safety: implicit 1s rate limit (5s for replies), `(rule.name, message.guid)` dedupe in `rules.state.sqlite`, hard refuse of `reply` on `is_from_me=true` to prevent loops, universal `--dry-run`.
-- SIGHUP hot reload; mtime fallback every 5s.
-- Fill `Sources/imsg/Commands/RulesCommand.swift` with subcommands `run | validate | list | tail`.
+- `Sources/IMsgCore/Rules/{RuleModel,RuleLoader,RuleMatcher,RuleActions,RulesState}.swift` — strict `[[rule]]` TOML loader, regex/time/chat/sender matcher, template renderer, durable SQLite dedupe/cooldown/cursor state, and action runner.
+- Actions: `exec` (argv, env injected, 30s timeout), `webhook` (HTTPS via W3.H, optional `IMSG_RULES_SECRET` HMAC), `reply` (delegates to `MessageSender`; `--dry-run` aware), `log`.
+- Safety: implicit 1s rate limit (5s for replies), `(rule.name, message.guid)` dedupe in `rules.state.sqlite`, hard skip of `reply` on `is_from_me=true` to prevent loops, universal `--dry-run`.
+- `Sources/imsg/Commands/RulesCommand.swift` ships `--action validate|list|run|tail`, `--config`, `--state`, `--chat-id`, `--since`, `--limit`, and `--dry-run`.
+- Tests: `Tests/IMsgCoreTests/RulesTests.swift` and `Tests/imsgTests/RulesCommandTests.swift`.
+- Deferred follow-up: SIGHUP hot reload, mtime autoreload, richer log rotation, and broader fixture replay coverage.
 
 ### W4.C — Compose (LLM-drafted replies)
 - Depends on W3.H (HTTP).

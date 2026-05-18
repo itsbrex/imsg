@@ -16,6 +16,9 @@
 - feat: wire opt-in enrichment into `history`, `watch`, JSON-RPC read/watch,
   and MCP read/watch surfaces with `transcript`, `ocr`, `unfurl`, and `all`
   selectors.
+- feat: add the `imsg rules` MVP with strict TOML validation, regex/time/chat
+  matching, dry-run support, durable dedupe/cooldown state, and log/exec/webhook/reply
+  action runners.
 
 ### CI And Portability
 - fix: resolve Swift 6 exclusivity and async-isolation compile failures across
