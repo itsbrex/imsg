@@ -56,6 +56,9 @@ Returned by `imsg history`, `imsg watch`, and the JSON-RPC `messages.history` an
 | `created_at` | ISO8601 | Message timestamp. |
 | `attachments` | array | Present when `--attachments` is set. See below. |
 | `thread_originator_guid` | string | For inline-reply threads. |
+| `transcript` | string | Present when `--enrich transcript` finds stored audio transcription metadata. |
+| `unfurl` | array | Present when `--enrich unfurl` extracts HTTPS URL metadata. |
+| `ocr` | array | Present when `--enrich ocr` recognizes text in attachment paths. |
 
 ### Reaction extensions
 

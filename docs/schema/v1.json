@@ -99,6 +99,9 @@
         "chat_name":              { "type": "string", "description": "RPC only." },
         "participants":           { "type": "array", "items": { "type": "string" }, "description": "RPC only." },
         "is_group":               { "type": "boolean", "description": "RPC only." },
+        "transcript":             { "type": "string", "description": "Opt-in enrichment field from --enrich transcript." },
+        "unfurl":                 { "type": "array", "items": { "type": "object" }, "description": "Opt-in enrichment field from --enrich unfurl." },
+        "ocr":                    { "type": "array", "items": { "type": "object" }, "description": "Opt-in enrichment field from --enrich ocr." },
 
         "is_reaction":            { "type": "boolean", "description": "True when this message represents a tapback/emoji reaction event." },
         "reaction_type":          { "type": "string", "description": "love|like|dislike|laugh|emphasize|question|emoji." },

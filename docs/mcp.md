@@ -95,6 +95,7 @@ already gathers.
       "start":       {"type":"string","format":"date-time"},
       "end":         {"type":"string","format":"date-time"},
       "attachments": {"type":"boolean","default":false},
+      "enrich":      {"type":"array","items":{"enum":["transcript","ocr","unfurl","all"]}},
       "reactions":   {"type":"boolean","default":false}
     },
     "additionalProperties": false
@@ -117,6 +118,7 @@ notifications until unsubscribed.
       "chat_id":     {"type":"integer"},
       "since_rowid": {"type":"integer"},
       "attachments": {"type":"boolean","default":false},
+      "enrich":      {"type":"array","items":{"enum":["transcript","ocr","unfurl","all"]}},
       "reactions":   {"type":"boolean","default":false}
     },
     "additionalProperties": false

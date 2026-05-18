@@ -13,7 +13,8 @@ enum GraphCommand {
           .make(label: "chatID", names: [.long("chat-id")], help: "Limit to a single chat"),
           .make(label: "since", names: [.long("since")], help: "ISO8601 or NNd/NNw window start"),
           .make(label: "until", names: [.long("until")], help: "ISO8601 window end"),
-          .make(label: "limit", names: [.long("limit")], help: "Cap messages scanned (default 50000)"),
+          .make(
+            label: "limit", names: [.long("limit")], help: "Cap messages scanned (default 50000)"),
         ],
         flags: [
           .make(label: "dot", names: [.long("dot")], help: "Emit Graphviz DOT instead of JSON")

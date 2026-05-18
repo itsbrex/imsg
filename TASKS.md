@@ -13,7 +13,7 @@
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
 | 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
-| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | ✅ shipped (W4.X + W4.W + W4.E library; W4.E CLI wiring deferred) | — |
+| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | ✅ shipped (W4.X + W4.W + W4.E CLI/MCP wiring) | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
@@ -30,7 +30,7 @@ The 10 ideas, mapped to current status:
 | 2  | Search                                    | `imsg search`       | `docs/search.md`     | **superseded by upstream `imsg search`** (bridge-backed). Our W4.S FTS5 + embedding plan is descoped; if we want local-only indexing without the bridge, file it as a follow-up. |
 | 3  | Rules engine                              | `imsg rules`        | `docs/rules.md`      | stub — W4b (W4.R) |
 | 4  | Outbox                                    | `imsg outbox`       | `docs/outbox.md`     | ✅ shipped (W2c) |
-| 5  | Enrichment (OCR / unfurl / transcripts)   | library             | `docs/enrichment.md` | ✅ library shipped; CLI wiring deferred |
+| 5  | Enrichment (OCR / unfurl / transcripts)   | `--enrich`          | `docs/enrichment.md` | ✅ shipped for CLI, JSON-RPC, and MCP read/watch surfaces |
 | 6  | Schema envelope                           | n/a (env var)       | `docs/SCHEMA.md`     | ✅ shipped (W2a) |
 | 7  | Long-lived socket server                  | `imsg serve`        | `docs/serve.md`      | stub — W4b (W4.V) |
 | 8  | Contacts + interaction graph              | `imsg who`/`graph`  | `docs/contacts.md`   | ✅ MVP shipped (W4.W). Note: upstream also ships `imsg whois` for bridge reachability checks. |
@@ -76,13 +76,13 @@ Unblocks: W4.W (who/graph).
 
 Each agent owns a disjoint directory and a fillable command stub.
 
-### W4.E — Enrichment pipeline ✅ (library; CLI wiring deferred)
+### W4.E — Enrichment pipeline ✅
 - `Sources/IMsgCore/Enrichment/Enricher.swift` — `Enricher` protocol, `EnrichmentField` / `EnrichmentValue` / `EnrichmentContext` / `EnrichmentResult` value types, and `EnrichmentChain` (concurrent runner with `TaskGroup`, deterministic merge in registration order, failing enrichers logged via `onError` without breaking the chain).
 - `Sources/IMsgCore/Enrichment/UnfurlEnricher.swift` — extracts HTTPS URLs (via `NSDataDetector`, capped per message), fetches each via the W3.H `HTTP` helper (HTTPS-only, size-capped, single attempt), and emits a compact `unfurl: [{url, title, og_title, og_description, og_image}, …]` field. `HTMLMetaScraper` is a small regex-based helper for `<title>` + OpenGraph meta tags — fine for the unfurl path, intentionally not a full HTML parser.
 - `Sources/IMsgCore/Enrichment/TranscriptEnricher.swift` — reads the pre-existing transcription stored in `attachment.user_info` (via the new `MessageStore.audioTranscriptionPublic(for:)` shim around the existing internal helper). v1 does not re-transcribe on device.
 - `Sources/IMsgCore/Enrichment/OCREnricher.swift` — `OCREnricher` protocol with `VisionOCREnricher` (macOS-only, `VNRecognizeTextRequest`, per-attachment timeout via `withThrowingTaskGroup`, accurate recognition + language correction) and `NoOpOCREnricher` for non-Apple builds / tests.
 - `Tests/IMsgCoreTests/EnrichmentTests.swift` — chain (order, failing enricher), HTML scraper happy path + nil cases, HTTPS-only URL extraction, full `UnfurlEnricher` round-trip over a fake transport, `TranscriptEnricher` present / absent / empty.
-- Deferred follow-up: wiring `--enrich ocr,unfurl,transcript` into `WatchCommand`, `HistoryCommand`, and `McpCommand`. The library is in place; the CLI integration is a separate, focused change so the cross-cutting touch can land under its own review.
+- `--enrich ocr,unfurl,transcript|all` is wired into `WatchCommand`, `HistoryCommand`, JSON-RPC `messages.history` / `watch.subscribe`, and MCP `imsg.history` / `imsg.watch.subscribe`. CLI also supports `--enrich-local-only` to suppress unfurl.
 
 ### W4.S — Search (FTS5 tier only)
 - `Sources/IMsgCore/Search/SearchIndex.swift` — protocol.

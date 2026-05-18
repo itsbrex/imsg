@@ -33,8 +33,10 @@ func graphAggregatesPerContactPerChat() async throws {
   let messages: [Message] = [
     makeMessage(rowID: 1, chatID: 1, sender: "+555a", isFromMe: false, date: t0),
     makeMessage(rowID: 2, chatID: 1, sender: "", isFromMe: true, date: t0.addingTimeInterval(60)),
-    makeMessage(rowID: 3, chatID: 1, sender: "+555a", isFromMe: false, date: t0.addingTimeInterval(120)),
-    makeMessage(rowID: 4, chatID: 2, sender: "+555b", isFromMe: false, date: t0.addingTimeInterval(180)),
+    makeMessage(
+      rowID: 3, chatID: 1, sender: "+555a", isFromMe: false, date: t0.addingTimeInterval(120)),
+    makeMessage(
+      rowID: 4, chatID: 2, sender: "+555b", isFromMe: false, date: t0.addingTimeInterval(180)),
     makeMessage(rowID: 5, chatID: 2, sender: "", isFromMe: true, date: t0.addingTimeInterval(200)),
   ]
   let bridge = InMemoryContactsBridge(records: [
@@ -47,9 +49,10 @@ func graphAggregatesPerContactPerChat() async throws {
   )
 
   // Expect edges: Alice->1 (count=2), Me->1 (1), Bob->2 (1), Me->2 (1).
-  let edgeMap = Dictionary(uniqueKeysWithValues: graph.edges.map {
-    ("\($0.fromContactId)|\($0.toChatId)", $0)
-  })
+  let edgeMap = Dictionary(
+    uniqueKeysWithValues: graph.edges.map {
+      ("\($0.fromContactId)|\($0.toChatId)", $0)
+    })
   #expect(edgeMap["Alice|1"]?.count == 2)
   #expect(edgeMap["Alice|1"]?.inbound == 2)
   #expect(edgeMap["Alice|1"]?.outbound == 0)
@@ -93,10 +96,11 @@ func graphEdgesAreOrderedByCountDescending() async throws {
   var messages: [Message] = []
   // contact A: 3 messages in chat 1
   for i in 0..<3 {
-    messages.append(makeMessage(
-      rowID: Int64(i + 1), chatID: 1, sender: "+a",
-      isFromMe: false, date: t0.addingTimeInterval(Double(i))
-    ))
+    messages.append(
+      makeMessage(
+        rowID: Int64(i + 1), chatID: 1, sender: "+a",
+        isFromMe: false, date: t0.addingTimeInterval(Double(i))
+      ))
   }
   // contact B: 1 message in chat 1
   messages.append(makeMessage(rowID: 10, chatID: 1, sender: "+b", isFromMe: false, date: t0))
@@ -137,10 +141,12 @@ func dotExporterRendersNodesAndEdges() async throws {
   let message = makeMessage(rowID: 1, chatID: 9, sender: "+y", isFromMe: false, date: t0)
   let graph = try await GraphBuilder().build(
     messages: [message],
-    chats: [9: ChatInfo(
-      id: 9, identifier: "iMessage;-;9", guid: "iMessage;-;9",
-      name: "Lunch", service: "iMessage",
-      accountID: nil, accountLogin: nil, lastAddressedHandle: nil)],
+    chats: [
+      9: ChatInfo(
+        id: 9, identifier: "iMessage;-;9", guid: "iMessage;-;9",
+        name: "Lunch", service: "iMessage",
+        accountID: nil, accountLogin: nil, lastAddressedHandle: nil)
+    ],
     bridge: InMemoryContactsBridge(records: ["+y": Contact(name: "Yves", handle: "+y")]),
     generatedAt: t0
   )

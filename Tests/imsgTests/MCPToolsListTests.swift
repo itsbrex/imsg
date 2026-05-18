@@ -35,6 +35,19 @@ func mcpToolsListReturnsAllSevenCatalogEntries() async throws {
   // The catalog's own list should match the emitted names one-for-one.
   let catalogNames = MCPToolCatalog.all.map { $0.name }
   #expect(Set(catalogNames) == expected)
+
+  let byTool = Dictionary(
+    uniqueKeysWithValues: tools.compactMap { tool -> (String, [String: Any])? in
+      guard let name = tool["name"] as? String else { return nil }
+      return (name, tool)
+    })
+  let historySchema = byTool["imsg.history"]?["inputSchema"] as? [String: Any]
+  let historyProperties = historySchema?["properties"] as? [String: Any]
+  #expect(historyProperties?["enrich"] != nil)
+
+  let watchSchema = byTool["imsg.watch.subscribe"]?["inputSchema"] as? [String: Any]
+  let watchProperties = watchSchema?["properties"] as? [String: Any]
+  #expect(watchProperties?["enrich"] != nil)
 }
 
 @Test

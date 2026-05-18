@@ -132,8 +132,10 @@ enum HTMLMetaScraper {
 
   private static func matchMetaContent(_ html: String, property: String) -> String? {
     // Order-independent: try property="x" content="y" and content="y" property="x".
-    let pattern = #"<meta\b[^>]*?(?:property|name)=["']\#(property)["'][^>]*?content=["']([^"']*)["']"#
-    let altPattern = #"<meta\b[^>]*?content=["']([^"']*)["'][^>]*?(?:property|name)=["']\#(property)["']"#
+    let pattern =
+      #"<meta\b[^>]*?(?:property|name)=["']\#(property)["'][^>]*?content=["']([^"']*)["']"#
+    let altPattern =
+      #"<meta\b[^>]*?content=["']([^"']*)["'][^>]*?(?:property|name)=["']\#(property)["']"#
     if let value = firstCapture(in: html, pattern: pattern) { return value }
     if let value = firstCapture(in: html, pattern: altPattern) { return value }
     return nil

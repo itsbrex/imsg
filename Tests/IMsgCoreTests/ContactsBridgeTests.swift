@@ -72,11 +72,13 @@ func cacheRespectsTTL() async throws {
     private var value: Date
     init(_ value: Date) { self.value = value }
     func advance(by interval: TimeInterval) {
-      lock.lock(); defer { lock.unlock() }
+      lock.lock()
+      defer { lock.unlock() }
       value = value.addingTimeInterval(interval)
     }
     func snapshot() -> Date {
-      lock.lock(); defer { lock.unlock() }
+      lock.lock()
+      defer { lock.unlock() }
       return value
     }
   }

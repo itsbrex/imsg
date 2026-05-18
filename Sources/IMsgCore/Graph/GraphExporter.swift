@@ -25,7 +25,8 @@ public enum GraphExporter {
     var lines: [String] = ["digraph imsg {"]
     lines.append("  rankdir=LR;")
     for node in graph.nodes where node.kind == "contact" {
-      lines.append("  \"\(escape(node.id))\" [shape=ellipse,label=\"\(escape(node.displayName))\"];")
+      lines.append(
+        "  \"\(escape(node.id))\" [shape=ellipse,label=\"\(escape(node.displayName))\"];")
     }
     for node in graph.nodes where node.kind == "chat" {
       lines.append(

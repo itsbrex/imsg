@@ -107,6 +107,43 @@ func historyCommandJsonReportsDirectChatMetadata() async throws {
 }
 
 @Test
+func historyCommandEnrichesAudioTranscript() async throws {
+  let path = try CommandTestDatabase.makePathWithAttachment(
+    filename: "/tmp/audio.caf",
+    transferName: "audio.caf",
+    uti: "com.apple.coreaudio-format",
+    mimeType: "audio/x-caf"
+  )
+  let db = try Connection(path)
+  try db.run("ALTER TABLE attachment ADD COLUMN user_info BLOB")
+  let info = try PropertyListSerialization.data(
+    fromPropertyList: ["audio-transcription": "voice memo transcript"],
+    format: .binary,
+    options: 0
+  )
+  try db.run(
+    "UPDATE attachment SET user_info = ? WHERE ROWID = 1",
+    Blob(bytes: [UInt8](info))
+  )
+
+  let values = ParsedValues(
+    positional: [],
+    options: ["db": [path], "chatID": ["1"], "limit": ["5"], "enrich": ["transcript"]],
+    flags: ["jsonOutput"]
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  let (output, _) = try await StdoutCapture.capture {
+    try await HistoryCommand.run(
+      values: values,
+      runtime: runtime,
+      contactResolverFactory: { NoOpContactResolver() }
+    )
+  }
+  let payload = try jsonObject(from: output)
+  #expect(payload["transcript"] as? String == "voice memo transcript")
+}
+
+@Test
 func searchCommandUsesLocalMessageStore() async throws {
   let path = try CommandTestDatabase.makePath()
   let values = ParsedValues(

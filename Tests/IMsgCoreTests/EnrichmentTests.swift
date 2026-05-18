@@ -43,11 +43,13 @@ func chainSkipsFailingEnrichers() async throws {
     private let lock = NSLock()
     private var values: [String] = []
     func append(_ name: String) {
-      lock.lock(); defer { lock.unlock() }
+      lock.lock()
+      defer { lock.unlock() }
       values.append(name)
     }
     func snapshot() -> [String] {
-      lock.lock(); defer { lock.unlock() }
+      lock.lock()
+      defer { lock.unlock() }
       return values
     }
   }
@@ -131,7 +133,8 @@ private final class FakeUnfurlTransport: HTTPTransport, @unchecked Sendable {
   }
 
   private func responseStep(for request: URLRequest) throws -> (URL, Step) {
-    lock.lock(); defer { lock.unlock() }
+    lock.lock()
+    defer { lock.unlock() }
     let url = request.url!
     guard let step = responses[url] else {
       throw NSError(domain: "FakeUnfurl", code: 404)

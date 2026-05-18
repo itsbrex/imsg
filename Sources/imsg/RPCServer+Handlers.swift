@@ -57,6 +57,12 @@ extension RPCServer {
     let startISO = stringParam(params["start"])
     let endISO = stringParam(params["end"])
     let includeAttachments = boolParam(params["attachments"]) ?? false
+    let enrichmentOptions: MessageEnrichmentOptions
+    do {
+      enrichmentOptions = try MessageEnrichmentOptions.parse(stringArrayParam(params["enrich"]))
+    } catch {
+      throw RPCError.invalidParams("invalid enrich")
+    }
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: boolParam(params["convert_attachments"]) ?? false)
     let filter = try MessageFilter.fromISO(
@@ -76,7 +82,8 @@ extension RPCServer {
         includeAttachments: includeAttachments,
         includeReactions: true,
         attachmentOptions: attachmentOptions,
-        contactResolver: contactResolver
+        contactResolver: contactResolver,
+        enrichmentOptions: enrichmentOptions
       )
       payloads.append(payload)
     }
@@ -91,6 +98,12 @@ extension RPCServer {
     let startISO = stringParam(params["start"])
     let endISO = stringParam(params["end"])
     let includeAttachments = boolParam(params["attachments"]) ?? false
+    let enrichmentOptions: MessageEnrichmentOptions
+    do {
+      enrichmentOptions = try MessageEnrichmentOptions.parse(stringArrayParam(params["enrich"]))
+    } catch {
+      throw RPCError.invalidParams("invalid enrich")
+    }
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: boolParam(params["convert_attachments"]) ?? false)
     let includeReactions = boolParam(params["include_reactions"]) ?? false
@@ -117,6 +130,7 @@ extension RPCServer {
     let localAttachmentOptions = attachmentOptions
     let localIncludeReactions = includeReactions
     let localContactResolver = contactResolver
+    let localEnrichmentOptions = enrichmentOptions
     let task = Task {
       do {
         for try await message in localWatcher.stream(
@@ -133,7 +147,8 @@ extension RPCServer {
             includeAttachments: localIncludeAttachments,
             includeReactions: localIncludeReactions,
             attachmentOptions: localAttachmentOptions,
-            contactResolver: localContactResolver
+            contactResolver: localContactResolver,
+            enrichmentOptions: localEnrichmentOptions
           )
           localWriter.sendNotification(
             method: "message",
@@ -424,12 +439,14 @@ func buildMessagePayload(
   prefetchedAttachments: [AttachmentMeta]? = nil,
   prefetchedReactions: [Reaction]? = nil,
   attachmentOptions: AttachmentQueryOptions = .default,
-  contactResolver: any ContactResolving = NoOpContactResolver()
+  contactResolver: any ContactResolving = NoOpContactResolver(),
+  enrichmentOptions: MessageEnrichmentOptions = .disabled,
+  enrichmentLocalOnly: Bool = false
 ) async throws -> [String: Any] {
   let chatInfo = try await cache.info(chatID: message.chatID)
   let participants = try await cache.participants(chatID: message.chatID)
   let attachments: [AttachmentMeta]
-  if includeAttachments {
+  if includeAttachments || enrichmentOptions.needsAttachmentMetadata {
     attachments =
       try prefetchedAttachments ?? store.attachments(for: message.rowID, options: attachmentOptions)
   } else {
@@ -448,13 +465,21 @@ func buildMessagePayload(
       reactionSenderNames[reaction.rowID] = name
     }
   }
-  return try messagePayload(
+  let payload = try messagePayload(
     message: message,
     chatInfo: chatInfo,
     participants: participants,
-    attachments: attachments,
+    attachments: includeAttachments ? attachments : [],
     reactions: reactions,
     senderName: senderName,
     reactionSenderNames: reactionSenderNames
+  )
+  return await enrichedMessagePayload(
+    payload,
+    message: message,
+    attachmentMetas: attachments,
+    store: store,
+    options: enrichmentOptions,
+    localOnly: enrichmentLocalOnly
   )
 }

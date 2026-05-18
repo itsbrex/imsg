@@ -22,6 +22,9 @@ enum WatchCommand {
             help: "filter by participant handles", parsing: .upToNextOption),
           .make(label: "start", names: [.long("start")], help: "ISO8601 start (inclusive)"),
           .make(label: "end", names: [.long("end")], help: "ISO8601 end (exclusive)"),
+          .make(
+            label: "enrich", names: [.long("enrich")],
+            help: "comma-separated enrichment list: transcript,ocr,unfurl,all"),
         ],
         flags: [
           .make(
@@ -38,6 +41,10 @@ enum WatchCommand {
           .make(
             label: "bbEvents", names: [.long("bb-events")],
             help: "include dylib-pushed events (typing, alias-removed) when injection is active"
+          ),
+          .make(
+            label: "enrichLocalOnly", names: [.long("enrich-local-only")],
+            help: "disable enrichers that perform outbound HTTP"
           ),
         ]
       )
@@ -77,6 +84,7 @@ enum WatchCommand {
     let showAttachments = values.flag("attachments")
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: values.flag("convertAttachments"))
+    let enrichmentOptions = try MessageEnrichmentOptions.parse(values.optionValues("enrich"))
     let includeReactions = values.flag("reactions")
     let participants = values.optionValues("participants")
       .flatMap { $0.split(separator: ",").map { String($0) } }
@@ -132,7 +140,9 @@ enum WatchCommand {
           includeAttachments: true,
           includeReactions: true,
           attachmentOptions: attachmentOptions,
-          contactResolver: contacts
+          contactResolver: contacts,
+          enrichmentOptions: enrichmentOptions,
+          enrichmentLocalOnly: values.flag("enrichLocalOnly")
         )
         if IMsgSchema.envOverride == "v1" {
           let kind = message.isReaction ? "reaction" : "message"
