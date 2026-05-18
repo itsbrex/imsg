@@ -191,7 +191,7 @@
       var payloads: [JSONValue] = []
       payloads.reserveCapacity(filtered.count)
       for message in filtered {
-        let payload = try await buildMessagePayload(
+        let payload = try await buildMCPMessagePayload(
           store: store,
           cache: cache,
           message: message,
@@ -199,7 +199,7 @@
           includeReactions: includeAttachments,
           enrichmentOptions: enrichmentOptions
         )
-        payloads.append(jsonValue(from: payload))
+        payloads.append(payload)
       }
 
       return envelope(kind: "messages", data: .object(["messages": .array(payloads)]))
@@ -248,7 +248,7 @@
           ) {
             if Task.isCancelled { return }
             if !filter.allows(message) { continue }
-            let payload = try await buildMessagePayload(
+            let payload = try await buildMCPMessagePayload(
               store: localStore,
               cache: localCache,
               message: message,
@@ -258,7 +258,7 @@
             )
             let params = JSONValue.object([
               "subscription_id": .int(Int64(subID)),
-              "message": jsonValue(from: payload),
+              "message": payload,
             ])
             try? MCPFraming.write(
               notification: MCPNotification(method: "notifications/message", params: params)
@@ -522,6 +522,35 @@
       return .object(out)
     }
     return .null
+  }
+
+  func buildMCPMessagePayload(
+    store: MessageStore,
+    cache: ChatCache,
+    message: Message,
+    includeAttachments: Bool,
+    includeReactions: Bool,
+    prefetchedAttachments: [AttachmentMeta]? = nil,
+    prefetchedReactions: [Reaction]? = nil,
+    attachmentOptions: AttachmentQueryOptions = .default,
+    contactResolver: any ContactResolving = NoOpContactResolver(),
+    enrichmentOptions: MessageEnrichmentOptions = .disabled,
+    enrichmentLocalOnly: Bool = false
+  ) async throws -> JSONValue {
+    let payload = try await buildMessagePayload(
+      store: store,
+      cache: cache,
+      message: message,
+      includeAttachments: includeAttachments,
+      includeReactions: includeReactions,
+      prefetchedAttachments: prefetchedAttachments,
+      prefetchedReactions: prefetchedReactions,
+      attachmentOptions: attachmentOptions,
+      contactResolver: contactResolver,
+      enrichmentOptions: enrichmentOptions,
+      enrichmentLocalOnly: enrichmentLocalOnly
+    )
+    return jsonValue(from: payload)
   }
 
   /// Thrown by MCP tool handlers; `MCPServer` maps this to a JSON-RPC error.
