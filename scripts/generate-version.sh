@@ -32,6 +32,8 @@ cat > "$PLIST_OUTPUT" <<PLIST
   <string>${MARKETING_VERSION}</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>Send messages via Messages.app.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Resolve sender handles to contact names for imsg history, watch, and who.</string>
 </dict>
 </plist>
 PLIST

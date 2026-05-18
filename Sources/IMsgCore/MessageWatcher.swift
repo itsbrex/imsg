@@ -24,159 +24,241 @@ public struct MessageWatcherConfiguration: Sendable, Equatable {
   }
 }
 
-public final class MessageWatcher: @unchecked Sendable {
+/// Multi-consumer message watcher.
+///
+/// `MessageWatcher` is an actor that fans out a single shared file-system
+/// observation of `chat.db` to N independent `AsyncThrowingStream` consumers.
+/// Each consumer owns its own cursor (so a slow consumer cannot starve a fast
+/// one), and cancellation of any single consumer leaves the others running.
+public actor MessageWatcher {
   private let store: MessageStore
+
+  private struct Subscriber {
+    let id: UUID
+    let chatID: Int64?
+    var cursor: Int64
+    let configuration: MessageWatcherConfiguration
+    let continuation: AsyncThrowingStream<Message, Error>.Continuation
+  }
+
+  private var subscribers: [UUID: Subscriber] = [:]
+  private var cancelledBeforeAdd: Set<UUID> = []
+  private var fileObserver: FileObserver?
+  private var fallbackTask: Task<Void, Never>?
+  private var debounceTask: Task<Void, Never>?
 
   public init(store: MessageStore) {
     self.store = store
   }
 
-  public func stream(
+  /// Subscribe to incoming messages. Returns a stream that finishes when the
+  /// caller breaks the iteration or cancels the consuming Task. Multiple
+  /// concurrent subscribers are supported and share the underlying watcher.
+  public nonisolated func stream(
     chatID: Int64? = nil,
     sinceRowID: Int64? = nil,
     configuration: MessageWatcherConfiguration = MessageWatcherConfiguration()
   ) -> AsyncThrowingStream<Message, Error> {
-    AsyncThrowingStream { continuation in
-      let state = WatchState(
-        store: store,
+    let (stream, continuation) = AsyncThrowingStream<Message, Error>.makeStream(of: Message.self)
+    let id = UUID()
+    continuation.onTermination = { [weak self] _ in
+      guard let self else { return }
+      Task { await self.removeSubscriber(id: id) }
+    }
+    Task {
+      await self.addSubscriber(
+        id: id,
         chatID: chatID,
         sinceRowID: sinceRowID,
         configuration: configuration,
         continuation: continuation
       )
-      state.start()
-      continuation.onTermination = { _ in
-        state.stop()
-      }
     }
+    return stream
   }
-}
 
-private final class WatchState: @unchecked Sendable {
-  private let store: MessageStore
-  private let chatID: Int64?
-  private let configuration: MessageWatcherConfiguration
-  private let continuation: AsyncThrowingStream<Message, Error>.Continuation
-  private let queue = DispatchQueue(label: "imsg.watch", qos: .userInitiated)
+  // MARK: - Subscriber lifecycle
 
-  private var cursor: Int64
-  #if os(macOS)
-    private var sources: [DispatchSourceFileSystemObject] = []
-  #endif
-  private var pending = false
-  private var stopped = false
-
-  init(
-    store: MessageStore,
+  private func addSubscriber(
+    id: UUID,
     chatID: Int64?,
     sinceRowID: Int64?,
     configuration: MessageWatcherConfiguration,
     continuation: AsyncThrowingStream<Message, Error>.Continuation
   ) {
-    self.store = store
-    self.chatID = chatID
-    self.configuration = configuration
-    self.continuation = continuation
-    self.cursor = sinceRowID ?? 0
-  }
-
-  func start() {
-    queue.async {
+    if cancelledBeforeAdd.remove(id) != nil {
+      return
+    }
+    let cursor: Int64
+    if let provided = sinceRowID, provided != 0 {
+      cursor = provided
+    } else {
       do {
-        if self.cursor == 0 {
-          self.cursor = try self.store.maxRowID()
-        }
-        self.poll()
+        cursor = try store.maxRowID()
       } catch {
-        self.continuation.finish(throwing: error)
+        continuation.finish(throwing: error)
+        return
       }
     }
 
+    let subscriber = Subscriber(
+      id: id,
+      chatID: chatID,
+      cursor: cursor,
+      configuration: configuration,
+      continuation: continuation
+    )
+    subscribers[id] = subscriber
+
+    ensureObservation()
+    pollSubscriber(id: id)
+  }
+
+  private func removeSubscriber(id: UUID) {
+    if subscribers.removeValue(forKey: id) == nil {
+      cancelledBeforeAdd.insert(id)
+      return
+    }
+    if subscribers.isEmpty {
+      tearDownObservation()
+    } else {
+      reconfigureFallback()
+    }
+  }
+
+  // MARK: - Observation
+
+  private func ensureObservation() {
     #if os(macOS)
-      let paths = [store.path, store.path + "-wal", store.path + "-shm"]
-      for path in paths {
-        if let source = makeSource(path: path) {
-          sources.append(source)
+      if fileObserver == nil {
+        let paths = [store.path, store.path + "-wal", store.path + "-shm"]
+        fileObserver = FileObserver(paths: paths) { [weak self] in
+          guard let self else { return }
+          Task { await self.fileEventDidFire() }
         }
       }
     #endif
-
-    queue.async {
-      self.scheduleFallbackPoll()
-    }
+    reconfigureFallback()
   }
 
-  func stop() {
-    queue.async {
-      self.stopped = true
-      #if os(macOS)
-        for source in self.sources {
-          source.cancel()
-        }
-        self.sources.removeAll()
-      #endif
-    }
+  private func tearDownObservation() {
+    fileObserver?.cancel()
+    fileObserver = nil
+    fallbackTask?.cancel()
+    fallbackTask = nil
+    debounceTask?.cancel()
+    debounceTask = nil
   }
 
-  #if os(macOS)
-    private func makeSource(path: String) -> DispatchSourceFileSystemObject? {
-      let fd = open(path, O_EVTONLY)
-      guard fd >= 0 else { return nil }
-      let source = DispatchSource.makeFileSystemObjectSource(
-        fileDescriptor: fd,
-        eventMask: [.write, .extend, .rename, .delete],
-        queue: queue
-      )
-      source.setEventHandler { [weak self] in
-        self?.schedulePoll()
+  private func reconfigureFallback() {
+    fallbackTask?.cancel()
+    let intervals = subscribers.values
+      .compactMap { $0.configuration.fallbackPollInterval }
+      .filter { $0 > 0 }
+    guard let minInterval = intervals.min() else {
+      fallbackTask = nil
+      return
+    }
+    let nanos = UInt64(max(minInterval, 0.001) * 1_000_000_000)
+    fallbackTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: nanos)
+        if Task.isCancelled { return }
+        await self?.pollAllSubscribers()
       }
-      source.setCancelHandler {
-        close(fd)
+    }
+  }
+
+  private func fileEventDidFire() {
+    debounceTask?.cancel()
+    let debounces = subscribers.values.map { $0.configuration.debounceInterval }
+    let minDebounce = debounces.min() ?? 0.25
+    let nanos = UInt64(max(minDebounce, 0) * 1_000_000_000)
+    debounceTask = Task { [weak self] in
+      if nanos > 0 {
+        try? await Task.sleep(nanoseconds: nanos)
       }
-      source.resume()
-      return source
-    }
-  #endif
-
-  private func schedulePoll() {
-    if stopped { return }
-    if pending { return }
-    pending = true
-    let delay = configuration.debounceInterval
-    queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-      guard let self else { return }
-      if self.stopped { return }
-      self.pending = false
-      self.poll()
+      if Task.isCancelled { return }
+      await self?.pollAllSubscribers()
     }
   }
 
-  private func scheduleFallbackPoll() {
-    guard let interval = configuration.fallbackPollInterval, interval > 0 else { return }
-    queue.asyncAfter(deadline: .now() + interval) { [weak self] in
-      guard let self, !self.stopped else { return }
-      self.poll()
-      self.scheduleFallbackPoll()
+  // MARK: - Polling
+
+  private func pollAllSubscribers() {
+    for id in Array(subscribers.keys) {
+      pollSubscriber(id: id)
     }
   }
 
-  private func poll() {
-    if stopped { return }
+  private func pollSubscriber(id: UUID) {
+    guard var subscriber = subscribers[id] else { return }
     do {
       let messages = try store.messagesAfter(
-        afterRowID: cursor,
-        chatID: chatID,
-        limit: configuration.batchLimit,
-        includeReactions: configuration.includeReactions
+        afterRowID: subscriber.cursor,
+        chatID: subscriber.chatID,
+        limit: subscriber.configuration.batchLimit,
+        includeReactions: subscriber.configuration.includeReactions
       )
       for message in messages {
-        continuation.yield(message)
-        if message.rowID > cursor {
-          cursor = message.rowID
+        subscriber.continuation.yield(message)
+        if message.rowID > subscriber.cursor {
+          subscriber.cursor = message.rowID
         }
       }
+      subscribers[id] = subscriber
     } catch {
-      continuation.finish(throwing: error)
+      subscriber.continuation.finish(throwing: error)
+      subscribers.removeValue(forKey: id)
+      if subscribers.isEmpty {
+        tearDownObservation()
+      }
     }
+  }
+}
+
+// MARK: - File observation
+
+/// Wraps the `DispatchSourceFileSystemObject` machinery so the actor can
+/// install / tear down file-system observation without touching dispatch
+/// queue state directly.
+private final class FileObserver: @unchecked Sendable {
+  private let queue = DispatchQueue(label: "imsg.watch.fileobserver", qos: .userInitiated)
+  #if os(macOS)
+    private var sources: [DispatchSourceFileSystemObject] = []
+  #endif
+
+  init(paths: [String], onChange: @escaping @Sendable () -> Void) {
+    #if os(macOS)
+      queue.sync {
+        for path in paths {
+          let fd = open(path, O_EVTONLY)
+          guard fd >= 0 else { continue }
+          let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename, .delete],
+            queue: queue
+          )
+          source.setEventHandler { onChange() }
+          source.setCancelHandler { close(fd) }
+          source.resume()
+          sources.append(source)
+        }
+      }
+    #else
+      _ = paths
+      _ = onChange
+    #endif
+  }
+
+  func cancel() {
+    #if os(macOS)
+      queue.sync {
+        for source in sources {
+          source.cancel()
+        }
+        sources.removeAll()
+      }
+    #endif
   }
 }

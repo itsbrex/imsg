@@ -2,7 +2,7 @@
 
 > **Source of truth for the multi-wave implementation.** Update this file as waves land. Branch: `claude/top-10-improvements-pTpkb`.
 
-## Status snapshot (last updated: end of Wave 2)
+## Status snapshot (last updated: Wave 4a complete; Wave 4b queued)
 
 | Wave | Scope | State | Tip commit |
 |------|-------|-------|-----------|
@@ -12,8 +12,8 @@
 | 2b   | `imsg mcp` stdio Model Context Protocol server | ✅ shipped | `1e677ac` |
 | 2c   | `imsg outbox` queued send with delivery verification + `imsg send --via-outbox` | ✅ shipped | `188b6f3` |
 | —    | Upstream sync (0.5.0 → 0.9.1, 85 commits) — bridge, refactors, ~25 new commands | ✅ merged | `7601b15` |
-| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | 📋 planned — note: upstream now ships `ContactResolver` so W3.C may collapse to a thin protocol over it | — |
-| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | 📋 planned | — |
+| 3    | Foundation refactors (watcher fanout, TOML, HTTP, contacts bridge) | ✅ shipped (W3.M + W3.T + W3.H + W3.C) | — |
+| 4a   | Features: enrichment, export, graph (search dropped — upstream ships it) | ✅ shipped (W4.X + W4.W + W4.E library; W4.E CLI wiring deferred) | — |
 | 4b   | Features: rules, compose, serve | 📋 planned | — |
 
 Originally listed Waves 2/3/4 in the pre-Wave-1 TASKS.md have been superseded by this plan.
@@ -43,30 +43,32 @@ The 10 ideas, mapped to current status:
 
 These unblock multiple Wave-4 features. **Land sequentially**, one review batch per task, so any concurrency/permissions issues are caught before parallel work starts.
 
-### W3.M — MessageWatcher multi-consumer fanout
+### W3.M — MessageWatcher multi-consumer fanout ✅
 Unblocks: W4.V (serve), W4.R (rules), W4.E (enrichment).
-- Convert `Sources/IMsgCore/MessageWatcher.swift` to an `actor` with a single shared `DispatchSource`, one cursor per `(chatID, sinceRowID)`, and N subscribed `AsyncThrowingStream` consumers.
-- Keep the existing `stream(chatID:sinceRowID:configuration:) -> AsyncThrowingStream<Message, Error>` as a thin convenience wrapper so `WatchCommand` and `RpcCommand` stay untouched.
-- Concurrency tests: two subscribers see the same row exactly once each; cancellation of one consumer doesn't affect the other.
-- Files: `Sources/IMsgCore/MessageWatcher.swift` (refactor), `Tests/IMsgCoreTests/MessageWatcherFanoutTests.swift` (new, Swift Testing).
+- `Sources/IMsgCore/MessageWatcher.swift` is now an `actor` with a private `FileObserver` wrapper around `DispatchSourceFileSystemObject`. The observer is created lazily on first subscribe and torn down when the last subscriber drops. Each subscriber owns its own cursor + chatID filter; one shared fallback poll runs at the minimum interval across subscribers.
+- The public `stream(chatID:sinceRowID:configuration:) -> AsyncThrowingStream<Message, Error>` API is preserved (now `nonisolated`); `WatchCommand`, `RPCServer+Handlers`, and `MCPHandlers` compile unchanged.
+- New: `Tests/IMsgCoreTests/MessageWatcherFanoutTests.swift` covers (a) two subscribers each see every row exactly once, (b) cancellation of one consumer leaves the other running, (c) per-subscriber chat filters are independent.
 
-### W3.T — Hand-rolled TOML subset
+### W3.T — Hand-rolled TOML subset ✅
 Unblocks: W4.R (rules).
-- New `Sources/IMsgCore/Config/TOML.swift` — parse `[[rule]]` array-of-tables, scalars (string / int / bool / float / array), triple-quoted strings, `#` comments. Reject unknown keys.
-- No new Swift Package dependency. Document the supported subset in the file's leading comment.
-- Files: `Sources/IMsgCore/Config/TOML.swift`, `Tests/IMsgCoreTests/TOMLTests.swift`.
+- `Sources/IMsgCore/Config/TOML.swift` parses the documented subset: `[table]` / `[[array-of-tables]]` headers (with dotted segments), bare + quoted keys, basic strings with the standard escapes (including `\uXXXX`), triple-quoted basic strings (leading-newline trim), signed integers + floats with `_` separators, booleans, arrays (multi-line, trailing comma), inline tables, and `#` comments. The supported grammar is documented in the file's leading comment block.
+- No new Swift Package dependency. Output is a `TOMLValue` tree with typed accessors; "unknown key" enforcement is the caller's responsibility (the rules schema validator owns that).
+- Errors carry line + column. Duplicate top-level keys, duplicate table headers, unterminated strings, invalid escapes, and newlines inside single-line strings are rejected.
+- `Tests/IMsgCoreTests/TOMLTests.swift` covers scalars, escapes, triple-quoted strings, arrays, inline tables, `[[rule]]` arrays-of-tables, a realistic rules.toml fixture, and the negative cases above.
 
-### W3.H — URLSession HTTP helper
+### W3.H — URLSession HTTP helper ✅
 Unblocks: W4.C (compose), W4.R webhook action, W4.E unfurl.
-- New `Sources/IMsgCore/Net/HTTP.swift` — HTTPS-only by default, 10s timeout, 3 retries with jitter, size cap, header allow-list, optional HMAC-SHA256 body signing.
-- Pure stdlib (`URLSession`, `CryptoKit`). No new dependency.
-- Files: `Sources/IMsgCore/Net/HTTP.swift`, `Tests/IMsgCoreTests/HTTPTests.swift` (uses `URLProtocol` stub).
+- `Sources/IMsgCore/Net/HTTP.swift` is a small HTTPS-by-default client with a 10s default timeout, a `RetryPolicy` (3 attempts, exponential backoff with jitter, configurable), a response size cap (default 1 MiB), a denylist of transport-control headers (`Host`, `Content-Length`, `Connection`, etc.), and optional HMAC-SHA256 body signing that adds `X-Imsg-Signature: sha256=<hex>` + `X-Imsg-Timestamp` (matches the contract in `docs/rules.md`).
+- Pure stdlib: `URLSession` + `CryptoKit`, no new dependency. Transport is abstracted behind `HTTPTransport` (with a `URLSessionTransport` default) so tests can drive the helper without touching the network.
+- Retry on `408`, `429`, and `5xx`; immediate failure on other `4xx` (`HTTPError.nonRetryableStatus`); `HTTPError.retriesExhausted(lastStatus:)` when the policy runs out; transport throws are retried and surfaced as `.transport`.
+- `Tests/IMsgCoreTests/HTTPTests.swift` covers HTTPS-only enforcement (and the `allowInsecureScheme` override), success, 429 → retry → success, 5xx exhaustion, immediate 4xx failure, transport-error retries, response-size cap, HMAC header shape, transport-header stripping, and method/body forwarding. Backoff is short-circuited via an injected sleeper so the suite stays sub-second.
 
-### W3.C — Contacts bridge protocol
+### W3.C — Contacts bridge protocol ✅
 Unblocks: W4.W (who/graph).
-- New `Sources/IMsgCore/Contacts/ContactsBridge.swift` — `protocol ContactsBridge { func find(handle:) async throws -> ContactRecord? }` plus a `SystemContactsBridge` impl using `Contacts.framework`. Cache layer at `~/Library/Application Support/imsg/contacts.sqlite` with 24h TTL.
-- Edit `Sources/imsg/Resources/Info.plist` to add `NSContactsUsageDescription`.
-- Files: `Sources/IMsgCore/Contacts/{ContactsBridge,ContactsCache,ContactRecord}.swift`, `Sources/imsg/Resources/Info.plist` (edit), `Tests/IMsgCoreTests/ContactsBridgeTests.swift` (uses an in-memory mock bridge).
+- Shipped as a thin wrapper over the upstream `ContactResolving`: `Sources/IMsgCore/Contacts/Contact.swift` (record type — `name` + `handle`), `Sources/IMsgCore/Contacts/ContactsBridge.swift` (`protocol ContactsBridge { func find(handle:) async throws -> Contact? }` plus `ResolverContactsBridge`, `NoOpContactsBridge`, and `InMemoryContactsBridge` for tests), and `Sources/IMsgCore/Contacts/ContactsCache.swift` (actor-backed TTL cache, defaults to 24h, caches negative hits, supports per-handle and bulk invalidation, injectable clock).
+- `Sources/imsg/Resources/Info.plist` gains `NSContactsUsageDescription`.
+- The original plan called for a SQLite cache at `~/Library/Application Support/imsg/contacts.sqlite`. Deferred — upstream `ContactResolver` already loads the full address book up front, so per-handle lookups are cheap and a process-local cache is sufficient. Persistent cache is a follow-up if profiling shows we need it.
+- `Tests/IMsgCoreTests/ContactsBridgeTests.swift` covers `InMemoryContactsBridge`, `NoOpContactsBridge`, `ResolverContactsBridge` (against a fake `ContactResolving`), and `ContactsCache` (hit, miss caching, TTL expiry with an injected clock, manual invalidation).
 
 ---
 
@@ -74,13 +76,13 @@ Unblocks: W4.W (who/graph).
 
 Each agent owns a disjoint directory and a fillable command stub.
 
-### W4.E — Enrichment pipeline
-- `Sources/IMsgCore/Enrichment/Enricher.swift` — protocol + chain runner.
-- `Sources/IMsgCore/Enrichment/OCREnricher.swift` — `VNRecognizeTextRequest`, 3s timeout per attachment, cache at `~/Library/Caches/imsg/enrich/ocr/`.
-- `Sources/IMsgCore/Enrichment/UnfurlEnricher.swift` — uses `Sources/IMsgCore/Net/HTTP.swift` (W3.H); extracts `<title>` + OG/Twitter meta; cache at `enrich/unfurl/`; HTTPS-only.
-- `Sources/IMsgCore/Enrichment/TranscriptEnricher.swift` — reuses existing chat.db transcription column; no on-device re-transcription in v1.
-- Wiring: `--enrich ocr,unfurl,transcript` flag on `WatchCommand`, `HistoryCommand`, and `McpCommand`. Added fields appear only inside the envelope payload (additive).
-- Tests: per-enricher unit tests, `Tests/imsgTests/EnrichmentFlagTests.swift` for CLI parsing.
+### W4.E — Enrichment pipeline ✅ (library; CLI wiring deferred)
+- `Sources/IMsgCore/Enrichment/Enricher.swift` — `Enricher` protocol, `EnrichmentField` / `EnrichmentValue` / `EnrichmentContext` / `EnrichmentResult` value types, and `EnrichmentChain` (concurrent runner with `TaskGroup`, deterministic merge in registration order, failing enrichers logged via `onError` without breaking the chain).
+- `Sources/IMsgCore/Enrichment/UnfurlEnricher.swift` — extracts HTTPS URLs (via `NSDataDetector`, capped per message), fetches each via the W3.H `HTTP` helper (HTTPS-only, size-capped, single attempt), and emits a compact `unfurl: [{url, title, og_title, og_description, og_image}, …]` field. `HTMLMetaScraper` is a small regex-based helper for `<title>` + OpenGraph meta tags — fine for the unfurl path, intentionally not a full HTML parser.
+- `Sources/IMsgCore/Enrichment/TranscriptEnricher.swift` — reads the pre-existing transcription stored in `attachment.user_info` (via the new `MessageStore.audioTranscriptionPublic(for:)` shim around the existing internal helper). v1 does not re-transcribe on device.
+- `Sources/IMsgCore/Enrichment/OCREnricher.swift` — `OCREnricher` protocol with `VisionOCREnricher` (macOS-only, `VNRecognizeTextRequest`, per-attachment timeout via `withThrowingTaskGroup`, accurate recognition + language correction) and `NoOpOCREnricher` for non-Apple builds / tests.
+- `Tests/IMsgCoreTests/EnrichmentTests.swift` — chain (order, failing enricher), HTML scraper happy path + nil cases, HTTPS-only URL extraction, full `UnfurlEnricher` round-trip over a fake transport, `TranscriptEnricher` present / absent / empty.
+- Deferred follow-up: wiring `--enrich ocr,unfurl,transcript` into `WatchCommand`, `HistoryCommand`, and `McpCommand`. The library is in place; the CLI integration is a separate, focused change so the cross-cutting touch can land under its own review.
 
 ### W4.S — Search (FTS5 tier only)
 - `Sources/IMsgCore/Search/SearchIndex.swift` — protocol.
@@ -90,21 +92,24 @@ Each agent owns a disjoint directory and a fillable command stub.
 - Tests: `Tests/IMsgCoreTests/FTS5IndexTests.swift` (fixture chat.db → assert recall), `Tests/imsgTests/SearchCommandTests.swift`.
 - **Note:** also add a `tools/call imsg.search` handler in `Sources/imsg/MCP/MCPHandlers.swift` that currently returns `-32601`; remove that stub now that the feature exists.
 
-### W4.X — Export bundles
-- `Sources/IMsgCore/Export/BundleManifest.swift` — schema-v1 manifest struct + sha256 hashing.
-- `Sources/IMsgCore/Export/BundleWriter.swift` — deterministic output: messages ordered by `(created_at, rowid)`, attachments by lex filename, sorted JSON keys, `\n` line endings.
-- `Sources/IMsgCore/Export/BundleVerifier.swift` — recompute hashes, return drift report.
-- `Sources/IMsgCore/Export/BundleDiffer.swift` — structural diff (adds/removes/edits).
-- Fill `Sources/imsg/Commands/ExportCommand.swift` — `export|verify|diff` subcommands via `--action`.
-- Tests: golden-file round-trip in `Tests/IMsgCoreTests/BundleRoundtripTests.swift`.
+### W4.X — Export bundles ✅ (MVP)
+- `Sources/IMsgCore/Export/BundleManifest.swift` — `BundleManifest` / `BundleSource` / `BundleCounts` (snake_case JSON via `CodingKeys`) + `BundleHasher` (sha256-hex of bytes).
+- `Sources/IMsgCore/Export/BundleWriter.swift` — pure-data writer that takes a fetched `ExportSource` (so it's testable without `MessageStore`). Deterministic output: messages sorted by `(created_at, rowid)`, reactions by `(created_at, rowid)`, attachments by lex filename, JSON keys sorted at every depth via `JSONSerialization` `.sortedKeys`, JSONL files terminated with `\n` and `manifest.json` / `meta.json` pretty-printed with trailing newline. ISO-8601 UTC timestamps with second precision (`.SSS` only when the source has sub-second resolution). Refuses non-empty output directories.
+- `Sources/IMsgCore/Export/BundleVerifier.swift` — re-hashes every file listed in `manifest.hashes`, compares counts, reports `mismatchedHashes` / `missingFiles` / `unexpectedFiles` / `countDeltas` via `BundleDriftReport`.
+- `Sources/IMsgCore/Export/BundleDiffer.swift` — keys messages by `id.guid`, reports `addedMessages` / `removedMessages` / `editedMessages` (text + attachment-set delta) and a coarse symmetric reaction delta keyed by `(target, action, sender, type)`.
+- `Sources/imsg/Commands/ExportCommand.swift` now does work: `--action=export|verify|diff` (default `export`), `--chat-id` / `--out` for export, `--in` for verify, `--in` + `--other` for diff. JSON output via `--json`. Verify / diff exit non-zero on drift.
+- `Tests/IMsgCoreTests/BundleRoundtripTests.swift` covers layout, deterministic byte-for-byte equality across two runs, message ordering, verifier clean / hash mismatch / missing file / unexpected file, differ identical / added / removed / edited.
+- Deferred (per project "Out of scope" list): attachment-bytes copy + per-attachment sha256, `--redact-handles` + side-car redaction map, `--all`, `--since`/`--until`, `--shard-by`, `--tar-zst`, Ed25519 `--sign-with`, and `imsg import`. The MVP is "metadata-only mode" from `docs/export.md`; the bundle is reproducible and verifiable without ever copying attachment payloads.
 
-### W4.W — Contacts (`who`) and interaction graph (`graph`)
-- Depends on W3.C (`ContactsBridge`).
-- `Sources/IMsgCore/Graph/GraphBuilder.swift` — read `MessageStore` history, group by `(contact_id, chat_id)`, compute frequency/cadence/last-seen.
-- `Sources/IMsgCore/Graph/GraphExporter.swift` — JSON (envelope-wrapped) + DOT for Graphviz.
-- Fill `Sources/imsg/Commands/WhoCommand.swift` — resolve one handle or all participants of a chat.
-- Fill `Sources/imsg/Commands/GraphCommand.swift` — windowed export.
-- Tests: in-memory `ContactsBridge` mock + fixture chat.db.
+### W4.W — Contacts (`who`) and interaction graph (`graph`) ✅
+Depends on W3.C (`ContactsBridge`).
+- `Sources/IMsgCore/Graph/InteractionGraph.swift` — `GraphNode` / `GraphEdge` / `GraphWindow` / `InteractionGraph` value types.
+- `Sources/IMsgCore/Graph/GraphBuilder.swift` — takes a list of `Message` rows + a `chats: [Int64: ChatInfo]` map + an injected `ContactsBridge` and aggregates per-`(contact, chat)` edges with `count`, `inbound`, `outbound`, `lastAt`. Reactions are skipped; outbound (`is_from_me`) messages collapse under a synthetic `me` contact id. Edges are returned ordered by count desc (tiebreak contact asc, then chat asc) so the output is stable. Resolved contact display names become the `contact_id`; unresolved handles fall back to the raw handle. The fuller `sha256(...)` id-synthesis pipeline from `docs/contacts.md` is deferred — the simpler scheme is sufficient for the edge-aggregation use case and stays stable across runs because the inputs are stable.
+- `Sources/IMsgCore/Graph/GraphExporter.swift` — schema-envelope JSON (`{schema:"v1",kind:"graph",data:{...}}`, sorted keys at every depth) and Graphviz DOT (`digraph imsg`, ellipses for contacts + boxes for chats, edge labels carry the count).
+- `Sources/imsg/Commands/WhoCommand.swift` — `--handle <h>` resolves a single handle via the bridge, `--chat-id <n>` lists all chat participants (each handle resolved against the same bridge). Default text output emits `<name> <<handle>>`; `--json` emits an object with `source: "contacts" | "fallback"`. `bridgeFactory` and `storeFactory` are injectable for testing.
+- `Sources/imsg/Commands/GraphCommand.swift` — `--chat-id` restricts to a single chat (default: all chats up to 1000), `--since` accepts ISO-8601 or relative `NNd` / `NNw`, `--until` accepts ISO-8601, `--limit` caps messages scanned (default 50k), `--dot` selects Graphviz output (default JSON).
+- Deferred (out of scope for the MVP): `--top K`, `--metrics` (cadence + direction imbalance), `--redact`, `--refresh`, photo data, the full `sha256(contact)` id pipeline, group-handle special casing.
+- `Tests/IMsgCoreTests/GraphBuilderTests.swift` covers per-`(contact, chat)` aggregation with inbound/outbound + lastAt, reaction filtering, fallback when the bridge returns nil, count-desc ordering, JSON-envelope shape, and DOT rendering.
 
 ---
 
