@@ -45,6 +45,8 @@ Params:
 - `participants` (array of handle strings, optional)
 - `start` / `end` (ISO 8601, optional)
 - `attachments` (bool, default `false`)
+- `enrich` (array or comma-separated string, optional) — `transcript`, `ocr`,
+  `unfurl`, or `all`
 
 Result:
 
@@ -61,6 +63,8 @@ Params:
 - `participants` (array, optional)
 - `start` / `end` (ISO 8601, optional)
 - `attachments` (bool, default `false`)
+- `enrich` (array or comma-separated string, optional) — `transcript`, `ocr`,
+  `unfurl`, or `all`
 - `include_reactions` (bool, default `false`)
 - `debounce_ms` (int, default `500`)
 

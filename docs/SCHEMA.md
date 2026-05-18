@@ -103,6 +103,9 @@ Source: `imsg history --json`, `imsg watch --json`, and RPC `Message` object.
 | `chat_name`              | string   | no       | RPC only. |
 | `participants`           | string[] | no       | RPC only. |
 | `is_group`               | boolean  | no       | RPC only. |
+| `transcript`             | string   | no       | Added by opt-in `--enrich transcript`. |
+| `unfurl`                 | object[] | no       | Added by opt-in `--enrich unfurl`. |
+| `ocr`                    | object[] | no       | Added by opt-in `--enrich ocr`. |
 
 #### Reaction-event fields (set when the message is itself a tapback/emoji reaction)
 

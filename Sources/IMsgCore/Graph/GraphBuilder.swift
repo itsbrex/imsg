@@ -94,7 +94,8 @@ public struct GraphBuilder {
       )
     }
 
-    let sortedEdges: [GraphEdge] = edges
+    let sortedEdges: [GraphEdge] =
+      edges
       .sorted(by: edgeOrder)
       .map { (key, agg) in
         GraphEdge(
@@ -129,7 +130,10 @@ public struct GraphBuilder {
   }
 }
 
-private struct EdgeKey: Hashable { let contact: String; let chat: Int64 }
+private struct EdgeKey: Hashable {
+  let contact: String
+  let chat: Int64
+}
 private struct Aggregate {
   var count: Int = 0
   var inbound: Int = 0

@@ -17,6 +17,9 @@ enum HistoryCommand {
             help: "filter by participant handles", parsing: .upToNextOption),
           .make(label: "start", names: [.long("start")], help: "ISO8601 start (inclusive)"),
           .make(label: "end", names: [.long("end")], help: "ISO8601 end (exclusive)"),
+          .make(
+            label: "enrich", names: [.long("enrich")],
+            help: "comma-separated enrichment list: transcript,ocr,unfurl,all"),
         ],
         flags: [
           .make(
@@ -25,6 +28,10 @@ enum HistoryCommand {
           .make(
             label: "convertAttachments", names: [.long("convert-attachments")],
             help: "convert CAF/GIF attachments to model-compatible cached files"
+          ),
+          .make(
+            label: "enrichLocalOnly", names: [.long("enrich-local-only")],
+            help: "disable enrichers that perform outbound HTTP"
           ),
         ]
       )
@@ -52,6 +59,7 @@ enum HistoryCommand {
     let showAttachments = values.flag("attachments")
     let attachmentOptions = AttachmentQueryOptions(
       convertUnsupported: values.flag("convertAttachments"))
+    let enrichmentOptions = try MessageEnrichmentOptions.parse(values.optionValues("enrich"))
     let participants = values.optionValues("participants")
       .flatMap { $0.split(separator: ",").map { String($0) } }
       .filter { !$0.isEmpty }
@@ -82,7 +90,9 @@ enum HistoryCommand {
           prefetchedAttachments: attachmentsByMessageID[message.rowID] ?? [],
           prefetchedReactions: reactionsByMessageID[message.rowID] ?? [],
           attachmentOptions: attachmentOptions,
-          contactResolver: contacts
+          contactResolver: contacts,
+          enrichmentOptions: enrichmentOptions,
+          enrichmentLocalOnly: values.flag("enrichLocalOnly")
         )
         if IMsgSchema.envOverride == "v1" {
           try JSONLines.printObject([

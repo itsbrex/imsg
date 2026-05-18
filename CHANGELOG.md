@@ -13,6 +13,9 @@
 - feat: add a hand-rolled TOML parser, HTTPS-first HTTP helper, Contacts bridge
   cache, watcher fanout support, and enrichment library primitives for unfurl,
   audio transcript, and OCR follow-up wiring.
+- feat: wire opt-in enrichment into `history`, `watch`, JSON-RPC read/watch,
+  and MCP read/watch surfaces with `transcript`, `ocr`, `unfurl`, and `all`
+  selectors.
 
 ### CI And Portability
 - fix: resolve Swift 6 exclusivity and async-isolation compile failures across

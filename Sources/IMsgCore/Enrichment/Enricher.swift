@@ -8,11 +8,9 @@ import Foundation
 // reports its contribution as an `EnrichmentField`, so the chain runner
 // can merge results without ordering being load-bearing.
 //
-// The W4.E MVP ships the protocol surface and three concrete enrichers
-// (`UnfurlEnricher`, `TranscriptEnricher`, `VisionOCREnricher`). Wiring
-// the `--enrich ocr,unfurl,transcript` CLI flag into `WatchCommand`,
-// `HistoryCommand`, and `McpCommand` is deferred to a follow-up so this
-// library can land in one focused review batch.
+// The W4.E surface ships the protocol, three concrete enrichers
+// (`UnfurlEnricher`, `TranscriptEnricher`, `VisionOCREnricher`), and opt-in
+// `--enrich ocr,unfurl,transcript` wiring in the CLI and MCP read/watch paths.
 
 public struct EnrichmentField: Equatable, Sendable {
   public let key: String

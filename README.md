@@ -80,6 +80,9 @@ imsg group --chat-id 42 --json
 # Read history with attachment metadata.
 imsg history --chat-id 42 --limit 20 --attachments --json
 
+# Read history with derived transcript/OCR/unfurl fields.
+imsg history --chat-id 42 --enrich transcript,ocr,unfurl --json
+
 # Stream new messages, including tapbacks.
 imsg watch --chat-id 42 --reactions --json
 
@@ -117,7 +120,9 @@ Automation):
 - `imsg chats [--limit 20] [--json]`
 - `imsg group --chat-id <id> [--json]`
 - `imsg history --chat-id <id> [--limit 50] [--attachments] [--convert-attachments] [--participants <handles>] [--start <iso>] [--end <iso>] [--json]`
+- `imsg history --chat-id <id> [--enrich transcript,ocr,unfurl|all] [--enrich-local-only] [--json]`
 - `imsg watch [--chat-id <id>] [--since-rowid <id>] [--debounce <duration>] [--attachments] [--convert-attachments] [--reactions] [--participants <handles>] [--start <iso>] [--end <iso>] [--json]`
+- `imsg watch [--enrich transcript,ocr,unfurl|all] [--enrich-local-only] [--json]`
 - `imsg search --query <text> [--match contains|exact] [--limit 50] [--json]`
 - `imsg who (--handle <phone-or-email> | --chat-id <id>) [--json]`
 - `imsg graph [--chat-id <id>] [--since <iso|NNd|NNw>] [--until <iso>] [--limit <n>] [--dot]`

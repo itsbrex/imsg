@@ -163,6 +163,7 @@
       let startISO = args.field("start")?.stringValue
       let endISO = args.field("end")?.stringValue
       let includeAttachments = args.field("attachments")?.boolValue ?? false
+      let enrichmentOptions = try parseEnrichmentOptions(args.field("enrich"))
 
       let filter: MessageFilter
       do {
@@ -190,27 +191,15 @@
       var payloads: [JSONValue] = []
       payloads.reserveCapacity(filtered.count)
       for message in filtered {
-        let chatInfo = try await cache.info(chatID: message.chatID)
-        let participants = try await cache.participants(chatID: message.chatID)
-        let attachments =
-          includeAttachments ? try store.attachments(for: message.rowID) : []
-        let reactions =
-          includeAttachments ? try store.reactions(for: message.rowID) : []
-        let payload = MessagePayload(
+        let payload = try await buildMessagePayload(
+          store: store,
+          cache: cache,
           message: message,
-          attachments: attachments,
-          reactions: reactions
+          includeAttachments: includeAttachments,
+          includeReactions: includeAttachments,
+          enrichmentOptions: enrichmentOptions
         )
-        var dict = try payload.asDictionary()
-        dict["chat_identifier"] = chatInfo?.identifier ?? ""
-        dict["chat_guid"] = chatInfo?.guid ?? ""
-        dict["chat_name"] = chatInfo?.name ?? ""
-        dict["participants"] = participants
-        dict["is_group"] = isGroupHandle(
-          identifier: chatInfo?.identifier ?? "",
-          guid: chatInfo?.guid ?? ""
-        )
-        payloads.append(jsonValue(from: dict))
+        payloads.append(jsonValue(from: payload))
       }
 
       return envelope(kind: "messages", data: .object(["messages": .array(payloads)]))
@@ -224,6 +213,7 @@
       let endISO = args.field("end")?.stringValue
       let includeAttachments = args.field("attachments")?.boolValue ?? false
       let includeReactions = args.field("include_reactions")?.boolValue ?? false
+      let enrichmentOptions = try parseEnrichmentOptions(args.field("enrich"))
 
       let filter: MessageFilter
       do {
@@ -248,6 +238,7 @@
       let localStore = store
       let localCache = cache
       let localWatcher = watcher
+      let localEnrichmentOptions = enrichmentOptions
       let task = Task {
         do {
           for try await message in localWatcher.stream(
@@ -257,33 +248,17 @@
           ) {
             if Task.isCancelled { return }
             if !filter.allows(message) { continue }
-            let chatInfo = try await localCache.info(chatID: message.chatID)
-            let participants = try await localCache.participants(chatID: message.chatID)
-            let attachments =
-              includeAttachments
-              ? try localStore.attachments(for: message.rowID)
-              : []
-            let reactions =
-              includeAttachments
-              ? try localStore.reactions(for: message.rowID)
-              : []
-            let payload = MessagePayload(
+            let payload = try await buildMessagePayload(
+              store: localStore,
+              cache: localCache,
               message: message,
-              attachments: attachments,
-              reactions: reactions
-            )
-            var dict = try payload.asDictionary()
-            dict["chat_identifier"] = chatInfo?.identifier ?? ""
-            dict["chat_guid"] = chatInfo?.guid ?? ""
-            dict["chat_name"] = chatInfo?.name ?? ""
-            dict["participants"] = participants
-            dict["is_group"] = isGroupHandle(
-              identifier: chatInfo?.identifier ?? "",
-              guid: chatInfo?.guid ?? ""
+              includeAttachments: includeAttachments,
+              includeReactions: includeReactions,
+              enrichmentOptions: localEnrichmentOptions
             )
             let params = JSONValue.object([
               "subscription_id": .int(Int64(subID)),
-              "message": jsonValue(from: dict),
+              "message": jsonValue(from: payload),
             ])
             try? MCPFraming.write(
               notification: MCPNotification(method: "notifications/message", params: params)
@@ -498,6 +473,17 @@
           .filter { !$0.isEmpty }
       }
       return []
+    }
+
+    private func parseEnrichmentOptions(_ value: JSONValue?) throws -> MessageEnrichmentOptions {
+      do {
+        return try MessageEnrichmentOptions.parse(stringArray(value))
+      } catch {
+        throw MCPToolError(
+          code: MCPErrorCode.invalidParams,
+          message: "invalid enrich option"
+        )
+      }
     }
   }
 

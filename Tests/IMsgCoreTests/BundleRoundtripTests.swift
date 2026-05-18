@@ -99,7 +99,9 @@ func writerIsDeterministicByteForByte() throws {
   _ = try makeWriter().write(fixtureSource(), to: a)
   _ = try makeWriter().write(fixtureSource(), to: b)
 
-  for name in ["manifest.json", "meta.json", "participants.json", "messages.jsonl", "reactions.jsonl"] {
+  for name in [
+    "manifest.json", "meta.json", "participants.json", "messages.jsonl", "reactions.jsonl",
+  ] {
     let aData = try Data(contentsOf: a.appendingPathComponent(name))
     let bData = try Data(contentsOf: b.appendingPathComponent(name))
     #expect(aData == bData, "expected \(name) to be byte-identical between exports")

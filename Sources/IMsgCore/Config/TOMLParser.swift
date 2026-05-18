@@ -82,7 +82,12 @@ struct TOMLParser {
       // Header?
       if peek() == "[" {
         let isArrayHeader = peek(offset: 1) == "["
-        if isArrayHeader { advance(); advance() } else { advance() }
+        if isArrayHeader {
+          advance()
+          advance()
+        } else {
+          advance()
+        }
         skipInlineWhitespace()
         let path = try parseHeaderKey()
         skipInlineWhitespace()
@@ -225,7 +230,10 @@ struct TOMLParser {
     var sawDigit = false
     while let c = peek() {
       if (c >= "0" && c <= "9") || c == "_" {
-        if c != "_" { sawDigit = true; text.append(Character(c)) }
+        if c != "_" {
+          sawDigit = true
+          text.append(Character(c))
+        }
         advance()
       } else {
         break
@@ -295,7 +303,9 @@ struct TOMLParser {
       if c == "\"" {
         if multiline {
           if peek(offset: 1) == "\"" && peek(offset: 2) == "\"" {
-            advance(); advance(); advance()
+            advance()
+            advance()
+            advance()
             if peek() == "\"" {
               result.append("\"")
               advance()
@@ -322,14 +332,30 @@ struct TOMLParser {
         advance()
         guard let esc = peek() else { throw error("dangling escape at end of string") }
         switch esc {
-        case "\"": result.append("\""); advance()
-        case "\\": result.append("\\"); advance()
-        case "/": result.append("/"); advance()
-        case "b": result.append("\u{08}"); advance()
-        case "f": result.append("\u{0C}"); advance()
-        case "n": result.append("\n"); advance()
-        case "r": result.append("\r"); advance()
-        case "t": result.append("\t"); advance()
+        case "\"":
+          result.append("\"")
+          advance()
+        case "\\":
+          result.append("\\")
+          advance()
+        case "/":
+          result.append("/")
+          advance()
+        case "b":
+          result.append("\u{08}")
+          advance()
+        case "f":
+          result.append("\u{0C}")
+          advance()
+        case "n":
+          result.append("\n")
+          advance()
+        case "r":
+          result.append("\r")
+          advance()
+        case "t":
+          result.append("\t")
+          advance()
         case "u":
           advance()
           result.unicodeScalars.append(try parseUnicodeEscape(length: 4))

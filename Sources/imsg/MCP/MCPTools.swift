@@ -71,6 +71,16 @@
             "type": .string("boolean"),
             "description": .string("Include attachment metadata."),
           ]),
+          "enrich": .object([
+            "type": .string("array"),
+            "items": .object([
+              "type": .string("string"),
+              "enum": .array([
+                .string("transcript"), .string("ocr"), .string("unfurl"), .string("all"),
+              ]),
+            ]),
+            "description": .string("Optional enrichers to run for each message."),
+          ]),
         ]),
         "required": .array([.string("chat_id")]),
         "additionalProperties": .bool(false),
@@ -95,6 +105,15 @@
           "end": .object(["type": .string("string")]),
           "attachments": .object(["type": .string("boolean")]),
           "include_reactions": .object(["type": .string("boolean")]),
+          "enrich": .object([
+            "type": .string("array"),
+            "items": .object([
+              "type": .string("string"),
+              "enum": .array([
+                .string("transcript"), .string("ocr"), .string("unfurl"), .string("all"),
+              ]),
+            ]),
+          ]),
         ]),
         "additionalProperties": .bool(false),
       ]),
