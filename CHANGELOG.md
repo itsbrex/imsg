@@ -1,15 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.14.2 - 2026-08-28
+
+### Highlights
+
+- Direct sends recover safely when a conversation is missing from Messages.app's live chats. Headless `watch` and `search` no longer stall on an unanswered Contacts permission prompt.
 
 ### Fixes
 
 - Recover missing live direct-chat objects through the verified participant on the original account before dispatch, for CLI and RPC sends (#244, thanks @0xble).
 - Let headless `watch` and `search` start without waiting for an undetermined Contacts permission prompt while preserving interactive prompting (#238, thanks @SebTardif).
 
+### JSON-RPC
+
+- Add `send.tracked` with caller-owned message IDs so bridge clients can reconcile a lost response through `message.send_status` without guessing which message was sent (#235, thanks @clawSean).
+
+### Dependencies
+
+- Update PhoneNumberKit to 5.0.7 for current phone-number metadata (#245).
+
 ### Maintenance
 
-- Update PhoneNumberKit to 5.0.7, the CI SwiftLint pin to 0.65.1, and the docs build runtime to Node 26.
+- Restrict CI workflow tokens to read-only repository access (#242, thanks @vincentkoc).
+- Update the CI SwiftLint pin to 0.65.1 and the docs build runtime to Node 26, and make the rich-link cancellation test deterministic (#245).
 
 ## 0.14.1 - 2026-08-11
 
