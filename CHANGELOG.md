@@ -2,14 +2,32 @@
 
 ## Unreleased
 
+### Highlights
+
+- Contact names now resolve over SSH with Full Disk Access, including local lookups, chat lists, and JSON-RPC, without a Contacts permission prompt.
+- Create iMessage groups with previously uncontacted recipients without first entering them in Messages.app. Unreachable recipients produce a clear error instead of a partial group.
+- Get clearer outcomes from automation: poll sends report whether the separate question caption arrived, and `imsg status` detects an unresponsive bridge.
+
 ### Fixes
 
-- Fall back to raw chat identifiers for empty display names and distinguish unavailable Contacts from unmatched local nicknames (#250, thanks @riverr4t).
+- Resolve contact names over SSH from existing read-only AddressBook stores when Contacts.framework has no grant, while preferring native Contacts when authorized. Refresh synced changes and clear stale names when the source or access changes (#250, #255, thanks @riverr4t).
+- Let `chat-create`, RPC `chat.create`, and `chat-add-member` create handles for previously uncontacted phone numbers and email addresses. Check iMessage availability before creating a chat or inviting a member, and reject unreachable or unresolved recipients without dropping them from the request (#254).
+- Report poll-caption delivery separately in CLI and RPC results, including unknown outcomes, retry safety, and the caption GUID for later status checks. Keep successful poll creation distinct from caption failures so callers can avoid duplicate polls (#239, thanks @omarshahine).
+- Report advanced features as unavailable when the live bridge status probe times out, with an `imsg launch` recovery hint; preserve existing setup diagnostics and avoid treating older-helper reply errors as timeouts (#253, thanks @omarshahine).
 - Let headless `nickname --local` return without an unanswered Contacts permission prompt while preserving interactive prompting (#248, thanks @SebTardif).
+- Fall back to raw chat identifiers for empty chat-list names while preserving stored titles in JSON/RPC metadata, and distinguish unavailable Contacts from an unmatched local nickname in text output (#250, #252, thanks @riverr4t).
+
+### Documentation
+
+- Fix table-of-contents labels and links for formatted, nested, and repeated headings, with unique anchors and correctly escaped heading text (#243, thanks @vincentkoc).
 
 ### Dependencies
 
-- Update PhoneNumberKit to 5.0.8 for current phone-number metadata.
+- Update PhoneNumberKit to 5.0.8 for current phone-number metadata (#251).
+
+### Maintenance
+
+- Remove a timing race in the RPC watch freshness test that could lose its first message and stall CI (#255).
 
 ## 0.14.2 - 2026-08-28
 
