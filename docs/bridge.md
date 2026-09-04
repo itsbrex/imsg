@@ -86,6 +86,34 @@ imsg poll send --chat 'iMessage;-;+15551234567' \
 
 Messages does not render the payload title on the poll balloon, so `poll send` follows it with a best-effort caption. Use `--comment` to choose different visible text or `--no-comment` when the caller already sent the context.
 
+The caption *is* the question as far as recipients are concerned, so `poll send` reports whether it landed under `comment` rather than leaving a failure on stderr:
+
+```json
+{"messageGuid":"...","comment":{"requested":true,"sent":true,"verified":true}}
+{"messageGuid":"...","comment":{"requested":true,"sent":null,"verified":false,"error":"The bridge accepted the caption, but delivery was not confirmed before the verification deadline.","disposition":"may_have_completed","retry_safe":false}}
+{"messageGuid":"...","comment":{"requested":true,"sent":false,"error":"...","disposition":"not_started","retry_safe":true}}
+{"messageGuid":"...","comment":{"requested":true,"sent":null,"error":"...","disposition":"still_in_flight","retry_safe":false}}
+{"messageGuid":"...","comment":{"requested":true,"sent":null}}
+{"messageGuid":"...","comment":{"requested":false,"sent":false}}
+```
+
+`requested` is false when the caption was suppressed. `sent` is tri-state: `true` means confirmed delivery, `false` means confirmed non-delivery, and `null` means delivery is unknown. The command still exits 0 when only the caption fails or remains unknown because the poll itself did land.
+
+A bridge acknowledgement only proves the transport accepted the send, so `poll send` also looks for the caption's row in the target chat before claiming delivery:
+
+- `sent: true, verified: true`: Messages recorded the row as delivered. The question reached the recipient.
+- `sent: false, verified: false`: Messages recorded the caption row as failed. This is confirmed non-delivery, but retry safety is not inferred from the database.
+- `sent: null, verified: false`: the row was absent, pending, or only locally sent at the verification deadline. Delivery is unknown because the caption may still arrive or fail later.
+- `sent: null` with no `verified` key: the check could not run because there was no readable database or caption GUID. Transport acknowledgement alone is not a delivery claim.
+- `sent: false, retry_safe: true`: the transport proved the caption operation did not start. Re-send only the caption text, never the poll.
+- `sent: null, retry_safe: false`: the transport reported an uncertain or still-running operation. Do not retry automatically.
+
+When the bridge returns a caption GUID, `comment.message_guid` identifies that separate message. Use RPC `message.send_status` with this GUID to check an unresolved caption later; do not use the poll GUID or assume the caption is a threaded reply.
+
+CLI output waits for the caption send attempt (the existing bridge send timeout is 150 seconds), then polls delivery for up to eight seconds. These are separate waits, not an end-to-end deadline. A slow or offline recipient can leave delivery unknown at the deadline.
+
+Only `retry_safe: true` authorizes a caption retry. Never infer retry safety from `sent`, `verified`, or human-readable `error` text.
+
 Vote or remove a vote with one option selector:
 
 ```bash

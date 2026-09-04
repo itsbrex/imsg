@@ -55,6 +55,7 @@ final class RPCServer: @unchecked Sendable {
   let sendMessage: (MessageSendOptions) throws -> Void
   let resolveSentMessage: SentMessageResolver
   let bridgeInvoker: BridgeInvoker
+  let captionVerifier: CaptionVerifier
   let stageAttachment: AttachmentStager
   let stageSticker: StickerStager
   let prepareRichLink: RichLinkPrepare
@@ -68,6 +69,12 @@ final class RPCServer: @unchecked Sendable {
   let bridgeEventPathUsable: @Sendable (String) -> Bool
   let bridgeEventStreamProvider: RPCBridgeEventStreamProvider
 
+  /// Reports the caption row's outcome in the target chat, including explicit
+  /// unknown and unavailable states that must not become delivery verdicts.
+  typealias CaptionVerifier = (
+    _ captionGUID: String, _ chatGUID: String, _ store: MessageStore?
+  ) async -> PollCaptionStatus.VerificationOutcome
+
   init(
     store: MessageStore,
     verbose: Bool,
@@ -76,6 +83,11 @@ final class RPCServer: @unchecked Sendable {
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
     invokeBridge: @escaping BridgeInvoker = { action, params in
       try await IMsgBridgeClient.shared.invokeWithoutLaunching(action: action, params: params)
+    },
+    verifyCaption: @escaping CaptionVerifier = { captionGUID, chatGUID, store in
+      await PollCaptionStatus.verifyCaption(
+        captionGUID: captionGUID, chatGUID: chatGUID, store: store,
+        timeout: PollCaptionStatus.rpcVerifyTimeout)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     stageSticker: @escaping StickerStager = {
@@ -117,6 +129,7 @@ final class RPCServer: @unchecked Sendable {
     self.sendMessage = sendMessage
     self.resolveSentMessage = resolveSentMessage
     self.bridgeInvoker = invokeBridge
+    self.captionVerifier = verifyCaption
     self.stageAttachment = stageAttachment
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink
@@ -140,6 +153,11 @@ final class RPCServer: @unchecked Sendable {
     resolveSentMessage: @escaping SentMessageResolver = RPCServer.resolveSentMessage,
     invokeBridge: @escaping BridgeInvoker = { action, params in
       try await IMsgBridgeClient.shared.invokeWithoutLaunching(action: action, params: params)
+    },
+    verifyCaption: @escaping CaptionVerifier = { captionGUID, chatGUID, store in
+      await PollCaptionStatus.verifyCaption(
+        captionGUID: captionGUID, chatGUID: chatGUID, store: store,
+        timeout: PollCaptionStatus.rpcVerifyTimeout)
     },
     stageAttachment: @escaping AttachmentStager = MessageSender.stageAttachmentForMessagesApp,
     stageSticker: @escaping StickerStager = { try StickerAssetPreparer.prepare(at: $0) },
@@ -177,6 +195,7 @@ final class RPCServer: @unchecked Sendable {
     self.sendMessage = sendMessage
     self.resolveSentMessage = resolveSentMessage
     self.bridgeInvoker = invokeBridge
+    self.captionVerifier = verifyCaption
     self.stageAttachment = stageAttachment
     self.stageSticker = stageSticker
     self.prepareRichLink = prepareRichLink

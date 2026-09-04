@@ -273,29 +273,52 @@ extension RPCServer {
     // comment failure must not fail the RPC.
     let comment = commentValue.flatMap { $0.isEmpty ? nil : $0 } ?? question
     var poisonAfterResponse: DeliveryFailure?
-    if !suppressComment, !comment.isEmpty {
+    let pollGuid = (data["messageGuid"] as? String) ?? ""
+    let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+    if suppressComment || comment.isEmpty {
+      result["comment"] = PollCaptionStatus.suppressed
+    } else {
       do {
-        _ = try await invokeBridge(
+        let captionData = try await invokeBridge(
           action: .sendMessage,
           params: [
             "chatGuid": chatGUID,
             "message": comment,
           ])
+        // The bridge acknowledging the send is not proof the caption row
+        // reached the chat, and an accepted-but-absent caption leaves exactly
+        // the question-less balloon this status exists to expose.
+        let captionGUID = (captionData["messageGuid"] as? String) ?? ""
+        let outcome = await captionVerifier(
+          captionGUID, chatGUID, await databaseResources.available()?.store)
+        result["comment"] = PollCaptionStatus.status(
+          forVerification: outcome, messageGUID: captionGUID)
+        if outcome == .unknown {
+          FileHandle.standardError.write(
+            Data(
+              "[imsg] poll.send: caption \(captionGUID) delivery was not verified in \(chatGUID); automatic retry is unsafe\n"
+                .utf8))
+        }
       } catch let failure as DeliveryFailure {
         if failure.disposition == .stillInFlight {
           poisonAfterResponse = failure
         }
-        let pollGuid = (data["messageGuid"] as? String) ?? ""
-        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+        result["comment"] = PollCaptionStatus.failed(failure)
+        let failureState = failure.retrySafe ? "failed before dispatch" : "delivery unresolved"
         FileHandle.standardError.write(
-          Data("[imsg] poll.send: comment echo delivery unresolved for \(pollDescription)\n".utf8))
+          Data(
+            "[imsg] poll.send: comment echo \(failureState) for \(pollDescription): \(failure)\n"
+              .utf8))
       } catch {
-        let pollGuid = (data["messageGuid"] as? String) ?? ""
-        let pollDescription = pollGuid.isEmpty ? "queued poll" : "poll \(pollGuid)"
+        result["comment"] = PollCaptionStatus.failed(error)
         FileHandle.standardError.write(
           Data("[imsg] poll.send: comment echo failed for \(pollDescription): \(error)\n".utf8))
       }
     }
+    // `ok` stays true when only the caption failed: the poll balloon really did
+    // land, and a caller that treats this as a failed send would re-send and
+    // duplicate it. `comment` reports confirmed failure separately from an
+    // outcome that is still unknown.
     respond(id: id, result: result)
     if let poisonAfterResponse {
       throw RPCMutationPoisonSignal(failure: poisonAfterResponse)
