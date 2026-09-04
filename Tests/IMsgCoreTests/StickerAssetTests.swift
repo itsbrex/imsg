@@ -72,6 +72,10 @@ func stickerPreparationRejectsUnsafeOrInvalidInputs() throws {
   #expect(throws: StickerAssetError.self) {
     try StickerAssetPreparer.prepare(at: linkedChild.path, destinationRoot: staged)
   }
+  #expect(throws: StickerAssetError.self) {
+    try StickerAssetPreparer.prepare(
+      at: parentLink.path + "/../valid.png", destinationRoot: staged)
+  }
 
   let corrupt = root.appendingPathComponent("corrupt.png")
   try Data("not an image".utf8).write(to: corrupt)
