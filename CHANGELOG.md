@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 - 2026-09-03
 
 ### Highlights
 
@@ -24,7 +24,7 @@
 ### Dependencies
 
 - Update PhoneNumberKit to 5.0.8 for current phone-number metadata (#251).
-- Update the GitHub Pages deployment action to 5.0.1 for deployment-status polling backoff and jitter.
+- Update the GitHub Pages deployment action to 5.0.1 for deployment-status polling backoff and jitter (#256).
 
 ### Maintenance
 
