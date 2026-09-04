@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Highlights
+
+- Send results identify the new message and the actual delivery route, including SMS fallback. Tapbacks target the requested message part.
+- Watch streams catch up promptly without losing URL previews during retries, and RPC shutdown waits for subscription cleanup.
+- Search finds Unicode case variants and audio transcripts, while history preserves long messages, Unicode characters, and leading line breaks.
+
+### Fixes
+
+- Normalize recipients before selecting a conversation, honor explicit iMessage/SMS choices, and verify the successful delivery route after SMS fallback. RPC results no longer identify an unrelated same-text message in the abandoned chat (#269).
+- Return the newly constructed message's GUID from native send acknowledgments, including deferred sends, instead of the previous message's GUID (#267).
+- Apply tapbacks to the requested message part consistently and reject missing nonzero parts before dispatch (#267).
+- Preserve URL previews when watch retries an unresolved row, and drain queued replay batches without waiting for another filesystem event or polling interval (#260).
+- Match Unicode text case-insensitively across plain and attributed bodies, and search audio transcripts even when the first attachment has no transcript. Keep exact and contains searches consistent on macOS and Linux (#265).
+- Decode attributed bodies using native archive lengths, preserving long text, Unicode, and leading newlines without leaking archive bytes from malformed or truncated bodies (#264).
+- Prevent duplicate messages, stalled pagination, and preview-enrichment crashes when one message belongs to multiple chats. Apply stable history ordering before limits and preserve associated events that are not reactions (#263).
+- Resolve the latest local poll selections across original polls and option-update messages, so selective unvote preserves the remaining choices and honors an empty latest selection (#268).
+- Keep reaction state consistent between history and watch when timestamps tie or differ by nanoseconds, and match message GUID casing consistently (#268).
+- Wait for active database watches and bridge event subscriptions to finish cancellation when unsubscribe and RPC shutdown overlap (#266).
+- Reject unsafe sticker paths and non-regular media inputs without hanging the CLI or Messages bridge. Share bounded snapshot reads for stickers and rich-link images while retaining their directory-access checks (#258, #262).
+- Reject malformed numeric selectors and invalid or overflowing durations before side effects; accept compound durations such as `2s500ms` and respect `--` before help/version-like arguments (#259).
+- Send generic CLI errors and error-triggered help to stderr so stdout remains usable by scripts (#269).
+
+### Performance and Maintenance
+
+- Reuse phone-number metadata for repeated single and batch contact lookups, preserving regional matching, permission checks, refreshes, and SSH lookup behavior (#261).
+- Consolidate routing, cancellation, decoding, and poll/reaction helpers; remove duplicate media readers and obsolete bridge diagnostics. Expand regression coverage with native archive fixtures, synthetic bridge handlers, and CLI/RPC behavior checks (#262, #263, #264, #266, #267, #268, #269).
+
 ## 0.15.0 - 2026-09-03
 
 ### Highlights
